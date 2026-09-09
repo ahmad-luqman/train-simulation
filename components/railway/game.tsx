@@ -14,6 +14,9 @@ import {
   Maximize2,
   Minus,
   Moon,
+  Camera,
+  Volume2,
+  VolumeX,
   Pause,
   Play,
   Plus,
@@ -39,6 +42,7 @@ import { cities, corridors, locomotives, money } from '@/lib/railway/data';
 import { Simulation } from '@/lib/railway/simulation';
 import type { RailwayWorld, CameraMode } from '@/lib/railway/world';
 import { makePortraits } from '@/lib/railway/portraits';
+import type { AudioMix } from '@/lib/railway/audio';
 import { registerRailwayTools } from '@/lib/railway/webmcp';
 const SAVE_KEY = 'steam-atlas-save-v1';
 export default function Game() {
@@ -50,7 +54,14 @@ export default function Game() {
     [mode, setMode] = useState<CameraMode>('iso'),
     [following, setFollowing] = useState(false),
     [labels, setLabels] = useState(true),
-    [evening, setEvening] = useState(false),
+    [cycle, setCycle] = useState(true),
+    [sound, setSound] = useState(false),
+    [photo, setPhoto] = useState(false),
+    [mix, setMix] = useState<AudioMix>({
+      master: 0.55,
+      effects: 0.7,
+      ambience: 0.4,
+    }),
     [speed, setSpeed] = useState(1),
     [paused, setPaused] = useState(false),
     [tick, setTick] = useState(0),
@@ -122,6 +133,8 @@ export default function Game() {
   }
   function overview() {
     setFollowing(false);
+    setPhoto(false);
+    if (world.current) world.current.photoMode = false;
     world.current?.overview();
   }
   const follow = useCallback(() => {
@@ -133,6 +146,31 @@ export default function Game() {
       world.current?.follow(selected);
     }
   }, [following, selected]);
+  function photoView() {
+    const enabled = !photo;
+    setPhoto(enabled);
+    if (world.current) world.current.photoMode = enabled;
+  }
+  async function toggleSound() {
+    const audio = world.current?.audio;
+    if (!audio) return;
+    if (sound) {
+      audio.mute();
+      setSound(false);
+      return;
+    }
+    try {
+      audio.mix = mix;
+      setSound(await audio.enable());
+    } catch {
+      setNotice('Sound could not start. Try Enable sound again.');
+    }
+  }
+  function adjustMix(channel: keyof AudioMix, value: number) {
+    const next = { ...mix, [channel]: value };
+    setMix(next);
+    if (world.current) world.current.audio.mix = next;
+  }
   function pause() {
     sim.current.paused = !sim.current.paused;
     setPaused(sim.current.paused);
@@ -208,7 +246,7 @@ export default function Game() {
   );
   void tick;
   return (
-    <main className="game-shell">
+    <main className={`game-shell ${photo ? 'photo-mode' : ''}`}>
       <header className="topbar">
         <div className="brand">
           <div className="monogram">
@@ -351,7 +389,7 @@ export default function Game() {
           </div>
           <div className="roster-footer">
             <span>12 locomotives · 8 destinations</span>
-            <small>A living collection, built from code.</small>
+            <small>A living collection in miniature.</small>
             <div className="collection-line">
               <span>MERIDIAN ARCHIVES</span>
               <span>VOL. 01</span>
@@ -431,15 +469,153 @@ export default function Game() {
               </div>
             </div>
             <div className="toolbar-row">
+              <Dialog>
+                <DialogTrigger
+                  className="map-button time-of-day"
+                  disabled={!ready}
+                >
+                  {(world.current?.atmosphere.hour ?? 15) >= 20 ||
+                  (world.current?.atmosphere.hour ?? 15) < 6 ? (
+                    <Moon size={13} />
+                  ) : (
+                    <Sun size={13} />
+                  )}
+                  Atmosphere
+                </DialogTrigger>
+                <DialogContent className="atmosphere-dialog">
+                  <DialogHeader>
+                    <DialogTitle>Life in the valley</DialogTitle>
+                    <DialogDescription>
+                      Set the light, listen to the railway, or let the day
+                      unfold.
+                    </DialogDescription>
+                  </DialogHeader>
+                  <div className="atmosphere-settings">
+                    <div className="setting-heading">
+                      <strong>Time of day</strong>
+                      <output>
+                        {String(
+                          Math.floor(world.current?.atmosphere.hour ?? 15),
+                        ).padStart(2, '0')}
+                        :
+                        {String(
+                          Math.floor(
+                            ((world.current?.atmosphere.hour ?? 15) % 1) * 60,
+                          ),
+                        ).padStart(2, '0')}
+                      </output>
+                    </div>
+                    <input
+                      aria-label="Time of day"
+                      type="range"
+                      min="0"
+                      max="23.99"
+                      step="0.05"
+                      value={world.current?.atmosphere.hour ?? 15}
+                      onChange={(e) =>
+                        world.current?.setTime(Number(e.target.value))
+                      }
+                    />
+                    <div className="light-presets">
+                      {[
+                        ['Afternoon', 15],
+                        ['Sunset', 18.5],
+                        ['Night', 23],
+                      ].map(([label, hour]) => (
+                        <button
+                          className="button"
+                          key={label}
+                          onClick={() => world.current?.setTime(Number(hour))}
+                        >
+                          {label}
+                        </button>
+                      ))}
+                    </div>
+                    <label className="setting-toggle">
+                      <input
+                        type="checkbox"
+                        checked={cycle}
+                        onChange={(e) => {
+                          setCycle(e.target.checked);
+                          if (world.current)
+                            world.current.atmosphere.cycling = e.target.checked;
+                        }}
+                      />
+                      Continuous day / night cycle
+                    </label>
+                    <p className="setting-note">
+                      One day takes 12 minutes at 1×. Pausing also freezes
+                      water, smoke, and daylight.
+                    </p>
+                    <div className="setting-heading">
+                      <strong>Railway sound</strong>
+                      <button
+                        className="button"
+                        onClick={() => void toggleSound()}
+                      >
+                        {sound ? <Volume2 size={14} /> : <VolumeX size={14} />}{' '}
+                        {sound ? 'Mute sound' : 'Enable sound'}
+                      </button>
+                    </div>
+                    {(['master', 'effects', 'ambience'] as const).map(
+                      (channel) => (
+                        <label className="audio-setting" key={channel}>
+                          <span>
+                            {channel === 'master'
+                              ? 'Master volume'
+                              : channel === 'effects'
+                                ? 'Trains & whistles'
+                                : 'Wind & river'}
+                            <output>{Math.round(mix[channel] * 100)}%</output>
+                          </span>
+                          <input
+                            aria-label={channel + ' volume'}
+                            type="range"
+                            min="0"
+                            max="1"
+                            step="0.01"
+                            value={mix[channel]}
+                            onChange={(e) =>
+                              adjustMix(channel, Number(e.target.value))
+                            }
+                          />
+                        </label>
+                      ),
+                    )}
+                    <button
+                      className="button"
+                      disabled={!sound || paused || photo}
+                      onClick={() => world.current?.audio.whistle(selected)}
+                    >
+                      Sound {engine.name}’s whistle
+                    </button>
+                    <p className="setting-note">
+                      Sound follows the camera. Move closer to hear wheel
+                      clatter, steam exhaust, and the rumble of a bridge
+                      crossing.
+                    </p>
+                  </div>
+                </DialogContent>
+              </Dialog>
+            </div>
+            <div className="toolbar-row scenic-cameras">
               <button
-                className="map-button time-of-day"
+                className="map-button"
+                disabled={!ready}
                 onClick={() => {
-                  setEvening(!evening);
-                  world.current?.setEvening(!evening);
+                  setFollowing(false);
+                  setMode('3d');
+                  world.current?.setTrackside();
                 }}
               >
-                {evening ? <Moon size={13} /> : <Sun size={13} />}{' '}
-                {evening ? 'Golden hour' : 'Afternoon'}
+                Trackside
+              </button>
+              <button
+                className="map-button"
+                disabled={!ready}
+                onClick={photoView}
+              >
+                <Camera size={13} /> Photo
               </button>
             </div>
             <div className="toolbar-row quality-control">
@@ -461,6 +637,20 @@ export default function Game() {
               </NativeSelect>
             </div>
           </div>
+          {photo && (
+            <div className="photo-controls">
+              <span>Photo mode · railway frozen</span>
+              <button
+                className="button"
+                onClick={() => world.current?.capturePhoto()}
+              >
+                <Camera size={14} /> Save image
+              </button>
+              <button className="button" onClick={photoView}>
+                Exit photo
+              </button>
+            </div>
+          )}
           {following && (
             <div className="follow-banner">
               <span className="live-dot" /> Following {engine.name}
@@ -473,7 +663,11 @@ export default function Game() {
             <div className="world-performance">
               <span className="live-dot" />{' '}
               {ready ? Math.round(world.current?.fps || 60) : '—'} FPS{' '}
-              <span>·</span> LIVE SIMULATION
+              <span>·</span>{' '}
+              {String(
+                Math.floor(world.current?.atmosphere.hour ?? 15),
+              ).padStart(2, '0')}
+              :00 {paused ? 'PAUSED' : 'IN THE VALLEY'}
             </div>
             <div className="map-coordinate">
               <Compass size={15} /> MERIDIAN VALLEY <span>38° N · 106° W</span>

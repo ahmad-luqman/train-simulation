@@ -3,24 +3,25 @@ import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { cities, corridors, locomotives } from './data';
 import { Simulation, edgeKey } from './simulation';
 import { box, cylinder, material, house, locomotive, carriage } from './models';
+import {
+  riverX,
+  height,
+  rng,
+  fields,
+  terrainMaterial,
+  batchScenery,
+} from './scenery';
+import {
+  Atmosphere,
+  createRiver,
+  qualitySettings,
+  type Quality,
+} from './atmosphere';
+import { SteamEffects } from './effects';
+import { RailwayAudio } from './audio';
+import { loadShowcase, disposeModel } from './assets';
+import { stationKit, industryKit } from './town-kits';
 export type CameraMode = 'iso' | '3d';
-const riverX = (z: number) =>
-  36 + 13 * Math.sin(z * 0.038) + 4 * Math.cos(z * 0.07);
-function height(x: number, z: number) {
-  const mountain = Math.max(0, (-z - 59) / 31);
-  const ridge = (Math.sin(x * 0.1) * 0.35 + 0.7) * mountain * mountain * 21;
-  const edge = Math.max(0, (Math.abs(x) - 78) / 17) * 3;
-  const river = Math.abs(x - riverX(z));
-  return river < 4.3
-    ? -1.7
-    : ridge + edge + (river < 6 ? (-1.7 * (6 - river)) / 1.7 : 0);
-}
-function rng(seed: number) {
-  return () => {
-    seed = (seed * 1664525 + 1013904223) >>> 0;
-    return seed / 4294967296;
-  };
-}
 export class RailwayWorld {
   scene = new THREE.Scene();
   renderer: THREE.WebGLRenderer;
@@ -32,18 +33,28 @@ export class RailwayWorld {
   following = false;
   labelsVisible = true;
   fps = 60;
+  private clearancePoints = new Map<THREE.CatmullRomCurve3, THREE.Vector3[]>();
   curves = new Map<string, THREE.CatmullRomCurve3>();
   trains: THREE.Group[] = [];
   cars: THREE.Group[][] = [];
   labels: { element: HTMLDivElement; position: THREE.Vector3 }[] = [];
-  smoke: {
-    mesh: THREE.Mesh;
-    age: number;
-    life: number;
-    velocity: THREE.Vector3;
-  }[] = [];
-  private smokeGeo = new THREE.IcosahedronGeometry(1, 1);
-  private smokeTimer = 0;
+  atmosphere: Atmosphere;
+  audio = new RailwayAudio();
+  effects: SteamEffects;
+  quality: Quality = 'balanced';
+  photoMode = false;
+  trackside = false;
+  assetStatus: 'loading' | 'ready' | 'fallback' = 'loading';
+  private showcase?: { engines: THREE.Object3D[]; tenders: THREE.Object3D[] };
+  private detailLevel = -1;
+  private emission = new Float32Array(12);
+  private previousRunning = Array.from({ length: 12 }, () => false);
+  private followTransition = false;
+  private routeHighlight = new THREE.Group();
+  private highlighted = -1;
+  private windowMaterials: THREE.MeshStandardMaterial[] = [];
+  private resources = new Set<THREE.BufferGeometry>();
+  private materials = new Set<THREE.Material>();
   private frame = 0;
   private previous = 0;
   private disposed = false;
@@ -81,7 +92,7 @@ export class RailwayWorld {
     );
     this.scene.background = new THREE.Color('#cbd5d4');
     this.scene.fog = new THREE.Fog('#cbd5d4', 250, 540);
-    this.scene.add(new THREE.HemisphereLight('#f8f0d9', '#617164', 2));
+
     this.sunlight = new THREE.DirectionalLight('#fff2cb', 3.2);
     this.sunlight.position.set(-65, 110, 35);
     this.sunlight.castShadow = true;
@@ -95,18 +106,33 @@ export class RailwayWorld {
     sh.normalBias = 0.2;
     sh.bias = -0.0002;
     this.scene.add(this.sunlight);
+    this.atmosphere = new Atmosphere(this.scene, this.sunlight, this.renderer);
     this.camera = new THREE.OrthographicCamera(-90, 90, 90, -90, 0.1, 800);
     this.camera.position.set(140, 155, 175);
     this.controls = this.makeControls();
     this.controls.target.set(0, 0, -7);
     this.controls.update();
     this.terrain();
-    this.water = this.river();
+    this.water = createRiver();
+    this.scene.add(this.water);
     this.railways();
     this.towns();
     this.nature();
+    this.rememberResources(this.scene);
+    batchScenery(
+      this.scene,
+      new Set([this.water, ...this.signalLights.map((s) => s.mesh)]),
+    );
+    this.effects = new SteamEffects(this.scene);
+    this.scene.add(this.routeHighlight);
     for (let i = 0; i < locomotives.length; i++) {
       const g = locomotive(locomotives[i].color, i);
+      this.rememberResources(g);
+      const moving = new Set<THREE.Object3D>();
+      (g.userData.wheels as THREE.Object3D[]).forEach((w) =>
+        w.traverse((o) => moving.add(o)),
+      );
+      batchScenery(g, moving);
       this.scene.add(g);
       this.trains.push(g);
       this.cars.push([]);
@@ -121,11 +147,40 @@ export class RailwayWorld {
         side: THREE.DoubleSide,
       }),
     );
+    this.rememberResources(this.scene);
+    for (const mat of this.materials) {
+      if (
+        mat instanceof THREE.MeshStandardMaterial &&
+        ['e5d8ad', 'c7d7d1', 'e5d6b0', 'd9c99b'].includes(
+          mat.color.getHexString(),
+        )
+      ) {
+        mat.emissive.set('#ffd394');
+        this.windowMaterials.push(mat);
+      }
+    }
+    void loadShowcase()
+      .then((asset) => {
+        if (this.disposed) {
+          [...asset.engines, ...asset.tenders].forEach(disposeModel);
+          return;
+        }
+        this.showcase = asset;
+        this.assetStatus = 'ready';
+        [...asset.engines, ...asset.tenders].forEach((model) =>
+          this.rememberResources(model),
+        );
+        this.updateShowcase();
+      })
+      .catch(() => {
+        if (!this.disposed) this.assetStatus = 'fallback';
+      });
     this.selectionRing.rotation.x = -Math.PI / 2;
     this.scene.add(this.selectionRing);
     this.resizeObserver = new ResizeObserver(() => this.resize());
     this.resizeObserver.observe(host);
-    this.resize();
+    this.setQuality('balanced');
+    document.addEventListener('visibilitychange', this.visibilityChanged);
     host.addEventListener('pointerdown', this.pointerDown);
     host.addEventListener('pointerup', this.pointerUp);
     this.frame = requestAnimationFrame(this.animate);
@@ -151,28 +206,35 @@ export class RailwayWorld {
     geo.rotateX(-Math.PI / 2);
     const pos = geo.attributes.position;
     const colors = [];
-    const random = rng(17);
+
     for (let i = 0; i < pos.count; i++) {
       const x = pos.getX(i),
         z = pos.getZ(i),
         y = height(x, z);
       pos.setY(i, y);
-      const col = new THREE.Color(
-        y > 12 ? '#899082' : y > 5 ? '#7f8e69' : '#839965',
+      const shore = Math.abs(x - riverX(z));
+      const slope = Math.hypot(
+        height(x + 0.5, z) - height(x - 0.5, z),
+        height(x, z + 0.5) - height(x, z - 0.5),
       );
-      col.multiplyScalar(0.92 + random() * 0.14);
+      const col = new THREE.Color('#78914d');
+      col.lerp(
+        new THREE.Color('#a49168'),
+        1 - THREE.MathUtils.smoothstep(shore, 5, 9),
+      );
+      col.lerp(
+        new THREE.Color('#767e75'),
+        THREE.MathUtils.smoothstep(Math.max(y / 9, slope), 0.4, 1.5),
+      );
+      col.lerp(
+        new THREE.Color('#bbc0b5'),
+        THREE.MathUtils.smoothstep(y, 24, 36),
+      );
       colors.push(col.r, col.g, col.b);
     }
     geo.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
     geo.computeVertexNormals();
-    const ground = new THREE.Mesh(
-      geo,
-      new THREE.MeshStandardMaterial({
-        vertexColors: true,
-        roughness: 1,
-        flatShading: true,
-      }),
-    );
+    const ground = new THREE.Mesh(geo, terrainMaterial());
     ground.receiveShadow = true;
     this.scene.add(ground);
     box(this.scene, '#ac9976', 0, -3.1, 0, 190, 3, 180);
@@ -185,50 +247,6 @@ export class RailwayWorld {
     floor.position.y = -6;
     floor.receiveShadow = true;
     this.scene.add(floor);
-  }
-  private river() {
-    const verts: number[] = [],
-      indices: number[] = [];
-    for (let i = 0; i <= 180; i++) {
-      const z = -90 + i,
-        x = riverX(z);
-      verts.push(x - 4.5, -0.95, z, x + 4.5, -0.95, z);
-      if (i < 180) {
-        const n = i * 2;
-        indices.push(n, n + 2, n + 1, n + 1, n + 2, n + 3);
-      }
-    }
-    const geo = new THREE.BufferGeometry();
-    geo.setAttribute('position', new THREE.Float32BufferAttribute(verts, 3));
-    geo.setIndex(indices);
-    geo.computeVertexNormals();
-    const m = new THREE.Mesh(
-      geo,
-      new THREE.MeshStandardMaterial({
-        color: '#71b5b1',
-        roughness: 0.32,
-        metalness: 0.25,
-        transparent: true,
-        opacity: 0.88,
-      }),
-    );
-    this.scene.add(m);
-    const random = rng(56);
-    for (let i = 0; i < 105; i++) {
-      const z = random() * 178 - 89,
-        x = riverX(z) + (random() - 0.5) * 7;
-      box(
-        this.scene,
-        '#b1d6c8',
-        x,
-        -0.91,
-        z,
-        0.035,
-        0.01,
-        0.6 + random() * 1.7,
-      ).rotation.y = 0.2;
-    }
-    return m;
   }
   private railways() {
     const ties: { p: THREE.Vector3; angle: number }[] = [];
@@ -279,11 +297,14 @@ export class RailwayWorld {
         geo.computeVertexNormals();
         const mesh = new THREE.Mesh(
           geo,
-          new THREE.MeshStandardMaterial({
-            color: side === 0 ? '#a7a18b' : '#d4d2bd',
-            roughness: side === 0 ? 1 : 0.42,
-            side: THREE.DoubleSide,
-          }),
+          side === 0
+            ? terrainMaterial(true)
+            : new THREE.MeshStandardMaterial({
+                color: '#d4d2bd',
+                roughness: 0.42,
+                metalness: 0.45,
+                side: THREE.DoubleSide,
+              }),
         );
         mesh.receiveShadow = true;
         this.scene.add(mesh);
@@ -352,40 +373,22 @@ export class RailwayWorld {
           row = Math.floor(i / 4);
         const x = city.x - 10 + col * 3.4,
           z = city.z + 5 + row * 4;
-        if (Math.abs(x - riverX(z)) < 7) continue;
+        if (!this.sceneryClear(x, z, 2)) continue;
         const s = 0.68 + random() * 0.4;
         house(urban, x, z, city.color, s, random() > 0.6 ? Math.PI : 0);
       }
       box(urban, '#b7b39a', city.x, 0, city.z + 4, 20, 0.07, 1.25);
       box(urban, '#b7b39a', city.x - 2, 0.01, city.z + 10, 1.2, 0.08, 13);
-      box(urban, '#d4c6a4', city.x, 0.5, city.z - 2.7, 9, 0.8, 2.6);
-      box(urban, '#6f7f6a', city.x, 2.3, city.z - 2.7, 8, 0.18, 3);
-      for (const x of [-3, 0, 3])
-        box(urban, '#6b725b', city.x + x, 1.5, city.z - 2.7, 0.16, 1.6, 0.16);
-      house(urban, city.x + 5, city.z - 4, '#cbad85', 0.85, Math.PI / 2);
-      if (index === 0 || index === 4) {
-        for (let j = 0; j < 3; j++) {
-          box(
-            urban,
-            '#916752',
-            city.x - 9 + j * 4,
-            2.2,
-            city.z + 18,
-            3.4,
-            4.4,
-            4,
-          );
-          cylinder(
-            urban,
-            '#9d8062',
-            city.x - 9 + j * 4,
-            5.2,
-            city.z + 18,
-            0.35,
-            4,
-          );
-        }
-      }
+      stationKit(
+        urban,
+        index === 6 ? { ...city, x: city.x + 8 } : city,
+        index === 4,
+      );
+      industryKit(
+        urban,
+        index === 6 ? { ...city, x: city.x + 18 } : city,
+        index,
+      );
       const el = document.createElement('div');
       el.className = 'city-label';
       el.innerHTML = `<strong>${city.name}</strong><span>${city.cargo}</span>`;
@@ -396,25 +399,24 @@ export class RailwayWorld {
       });
     });
     // Golden fields and neatly spaced planted rows around agricultural towns.
-    for (const [x, z] of [
-      [-73, 39],
-      [-41, 31],
-      [60, 65],
-      [22, -57],
-      [-32, 60],
-    ]) {
-      box(this.scene, '#b5a369', x, 0.07, z, 11, 0.1, 7);
-      for (let i = 0; i < 15; i++)
-        box(
-          this.scene,
-          i % 2 ? '#c7b379' : '#9f925c',
-          x - 5 + i * 0.7,
-          0.17,
-          z,
-          0.2,
-          0.16,
-          6.8,
-        );
+    for (const [x, z] of fields) {
+      for (let row = 0; row < 8; row++)
+        for (let col = 0; col < 15; col++) {
+          const px = x - 5 + col * 0.7,
+            pz = z - 3 + row * 0.8;
+          if (!this.sceneryClear(px, pz, 2.3)) continue;
+          box(this.scene, '#a49160', px, 0.06, pz, 0.69, 0.1, 0.79);
+          box(
+            this.scene,
+            col % 2 ? '#c7b379' : '#9f925c',
+            px,
+            0.17,
+            pz,
+            0.2,
+            0.16,
+            0.78,
+          );
+        }
     }
     for (const [x, z] of [
       [-77, -30],
@@ -431,27 +433,15 @@ export class RailwayWorld {
       const x = random() * 184 - 92,
         z = random() * 174 - 87;
       if (
-        Math.abs(x - riverX(z)) < 7 ||
-        cities.some((c) => Math.hypot(x - c.x, z - c.z) < 16)
+        !this.sceneryClear(x, z, 3) ||
+        cities.some((c) => Math.hypot(x - c.x, z - c.z) < 17) ||
+        fields.some(([fx, fz]) => Math.abs(x - fx) < 8 && Math.abs(z - fz) < 6)
       )
         continue;
-      if (
-        corridors.some(([a, b]) => {
-          const c = cities[a],
-            d = cities[b];
-          const dx = d.x - c.x,
-            dz = d.z - c.z,
-            t = Math.max(
-              0,
-              Math.min(
-                1,
-                ((x - c.x) * dx + (z - c.z) * dz) / (dx * dx + dz * dz),
-              ),
-            );
-          return Math.hypot(x - c.x - t * dx, z - c.z - t * dz) < 4;
-        })
-      )
-        continue;
+      // Variable density creates groves and open meadow rather than uniform scatter.
+      const cluster =
+        Math.sin(x * 0.075) * Math.cos(z * 0.09) + Math.sin((x + z) * 0.045);
+      if (cluster < -0.25 && random() > 0.12) continue;
       positions.push({ x, z, y: height(x, z), s: 0.65 + random() * 0.9 });
     }
     const trunk = new THREE.InstancedMesh(
@@ -511,11 +501,17 @@ export class RailwayWorld {
     while (this.cars[id].length < count) {
       const c = carriage(locomotives[id].color, this.cars[id].length);
       c.userData.trainId = id;
+      batchScenery(c, new Set());
       this.scene.add(c);
       this.cars[id].push(c);
     }
     while (this.cars[id].length > count) {
-      this.scene.remove(this.cars[id].pop()!);
+      const removed = this.cars[id].pop()!;
+      removed.removeFromParent();
+      removed.traverse((o) => {
+        if (o instanceof THREE.Mesh && o.geometry.type !== 'BoxGeometry')
+          o.geometry.dispose();
+      });
     }
   }
   private positionOnRoute(id: number, distance: number) {
@@ -537,6 +533,76 @@ export class RailwayWorld {
       tangent = curve.getTangentAt(u).multiplyScalar(forward ? 1 : -1);
     return { p, angle: Math.atan2(-tangent.x, -tangent.z) };
   }
+  private sceneryClear(x: number, z: number, clearance: number) {
+    if (Math.abs(x - riverX(z)) < 6.8) return false;
+    for (const curve of this.curves.values()) {
+      const points =
+        this.clearancePoints.get(curve) ??
+        curve.getSpacedPoints(Math.ceil(curve.getLength()));
+      this.clearancePoints.set(curve, points);
+      if (points.some((p) => Math.hypot(p.x - x, p.z - z) < clearance))
+        return false;
+    }
+    return true;
+  }
+  private rememberResources(root: THREE.Object3D) {
+    root.traverse((o) => {
+      if (o instanceof THREE.Mesh) {
+        this.resources.add(o.geometry);
+        (Array.isArray(o.material) ? o.material : [o.material]).forEach((m) =>
+          this.materials.add(m),
+        );
+      }
+    });
+  }
+  private updateShowcase() {
+    if (!this.showcase) return;
+    const distance =
+      this.camera.position.distanceTo(this.trains[10].position) /
+      (this.camera instanceof THREE.OrthographicCamera ? this.camera.zoom : 1);
+    const level =
+      this.quality === 'low' ? 2 : distance < 55 ? 0 : distance < 120 ? 1 : 2;
+    if (level === this.detailLevel) return;
+    this.detailLevel = level;
+    const engine = this.trains[10],
+      tender = this.cars[10][0];
+    engine.clear();
+    tender.clear();
+    engine.add(this.showcase.engines[level]);
+    tender.add(this.showcase.tenders[level]);
+    engine.userData.wheels = this.showcase.engines[level].userData.wheels;
+    engine.userData.rods = this.showcase.engines[level].userData.rods;
+    tender.userData.wheels = this.showcase.tenders[level].userData.wheels;
+  }
+  private updateRouteHighlight() {
+    if (this.highlighted === this.selected) return;
+    this.highlighted = this.selected;
+    for (const child of this.routeHighlight.children) disposeModel(child);
+    this.routeHighlight.clear();
+    const route = locomotives[this.selected].route;
+    const mat = new THREE.MeshBasicMaterial({
+      color: '#f4cd75',
+      transparent: true,
+      opacity: 0.32,
+      depthWrite: false,
+    });
+    route.forEach((a, i) => {
+      const curve = this.curves.get(edgeKey(a, route[(i + 1) % route.length]));
+      if (!curve) return;
+      const line = new THREE.Mesh(
+        new THREE.TubeGeometry(
+          curve,
+          Math.ceil(curve.getLength()),
+          0.12,
+          4,
+          false,
+        ),
+        mat,
+      );
+      line.position.y = 0.27;
+      this.routeHighlight.add(line);
+    });
+  }
   private animate = (now: number) => {
     if (this.disposed) return;
     this.frame = requestAnimationFrame(this.animate);
@@ -545,93 +611,183 @@ export class RailwayWorld {
       : 0.016;
     this.previous = now;
     this.fps = this.fps * 0.95 + Math.min(120, 1 / delta) * 0.05;
-    this.sim.step(delta);
-    this.sim.trains.forEach((t, i) => {
-      this.syncCars(i);
-      const { p, angle } = this.positionOnRoute(i, t.distance);
-      this.trains[i].position.copy(p);
-      this.trains[i].rotation.y = angle;
-      if (t.status === 'Running' && !this.sim.paused)
-        for (const w of this.trains[i].userData.wheels)
-          w.rotation.x -= delta * this.sim.speed * 6;
-      this.cars[i].forEach((car, j) => {
-        const at = this.positionOnRoute(i, t.distance - 3.8 - j * 3);
-        car.position.copy(at.p);
-        car.rotation.y = at.angle;
-      });
+    const frozen = this.sim.paused || this.photoMode || document.hidden;
+    const motionDelta = frozen ? 0 : delta * this.sim.speed;
+    if (!this.photoMode && !document.hidden) this.sim.step(delta);
+    const day = this.atmosphere.update(motionDelta);
+    this.host.dataset.night = day < 0.25 ? 'true' : 'false';
+    this.windowMaterials.forEach((m) => {
+      m.emissiveIntensity = (1 - day) * 1.5;
     });
+    const water = this.water.material as THREE.ShaderMaterial;
+    water.uniforms.time.value = this.atmosphere.time;
+    water.uniforms.day.value = day;
+    water.uniforms.fogColor.value.copy((this.scene.fog as THREE.Fog).color);
+    this.sim.trains.forEach((train, i) => {
+      this.syncCars(i);
+      const { p, angle } = this.positionOnRoute(i, train.distance);
+      const engine = this.trains[i];
+      engine.position.copy(p);
+      engine.rotation.y = angle;
+      const running = train.status === 'Running' && !train.held;
+      const phase = train.distance * 2.5;
+      for (const wheel of engine.userData.wheels as THREE.Object3D[])
+        wheel.rotation.x = -phase;
+      for (const rod of (engine.userData.rods ?? []) as THREE.Object3D[]) {
+        rod.position.y = rod.userData.baseY + Math.sin(phase) * 0.12;
+        rod.position.z = rod.userData.baseZ + Math.cos(phase) * 0.12;
+      }
+      this.cars[i].forEach((car, j) => {
+        const at = this.positionOnRoute(i, train.distance - 3.8 - j * 3);
+        car.position.copy(at.p);
+        car.rotation.set(0, at.angle, 0);
+        if (running) {
+          car.rotation.z = Math.sin(train.distance * 2 + j * 0.8) * 0.008;
+          car.position.y += Math.sin(train.distance * 4 + j) * 0.009;
+        }
+        for (const wheel of (car.userData.wheels ?? []) as THREE.Object3D[])
+          wheel.rotation.x = -phase;
+      });
+      if (!frozen) {
+        const effort = THREE.MathUtils.clamp(0.45 + train.cars * 0.07, 0, 1);
+        this.emission[i] += motionDelta;
+        if (running && this.emission[i] > 0.26 / effort) {
+          this.emission[i] = 0;
+          this.effects.emit(
+            engine.localToWorld(new THREE.Vector3(0, 2.55, -1.18)),
+            effort,
+          );
+        }
+        if (running && !this.previousRunning[i])
+          for (const side of [-1, 1])
+            this.effects.emit(
+              engine.localToWorld(new THREE.Vector3(side * 0.85, 0.6, -1.5)),
+              effort,
+              true,
+            );
+        this.previousRunning[i] = running;
+      }
+    });
+    this.effects.update(motionDelta);
     const target = this.trains[this.selected].position;
     this.selectionRing.position.set(target.x, 0.55, target.z);
-    if (this.following) {
-      const movement = target.clone().sub(this.controls.target);
-      this.camera.position.add(movement);
-      this.controls.target.copy(target);
+    this.selectionRing.visible = !this.photoMode;
+    this.routeHighlight.visible = !this.photoMode;
+    this.updateRouteHighlight();
+    if (this.trackside) {
+      if (this.camera.position.distanceTo(target) > 65) this.placeTrackside();
+      this.controls.target.lerp(target, 1 - Math.exp(-delta * 4));
+    } else if (this.following) {
+      const movement = target
+        .clone()
+        .sub(this.controls.target)
+        .multiplyScalar(1 - Math.exp(-delta * 5));
+      this.controls.target.add(movement);
+      if (this.followTransition) {
+        const offset =
+          this.mode === 'iso'
+            ? new THREE.Vector3(100, 110, 125)
+            : new THREE.Vector3(15, 10, 19);
+        const goal = target.clone().add(offset);
+        this.camera.position.lerp(goal, 1 - Math.exp(-delta * 4));
+        if (this.camera.position.distanceTo(goal) < 0.25)
+          this.followTransition = false;
+      } else this.camera.position.add(movement);
     }
     this.controls.update();
-    this.smokeTimer += delta;
-    if (this.smokeTimer > 0.17 && !this.sim.paused) {
-      this.smokeTimer = 0;
-      this.sim.trains.forEach((t, i) => {
-        if (t.status !== 'Running') return;
-        const m = new THREE.Mesh(
-          this.smokeGeo,
-          new THREE.MeshStandardMaterial({
-            color: '#ebe8d9',
-            transparent: true,
-            opacity: 0.45,
-            depthWrite: false,
-            roughness: 1,
-          }),
-        );
-        m.position.copy(
-          this.trains[i].localToWorld(new THREE.Vector3(0, 2.5, -1.2)),
-        );
-        m.scale.setScalar(0.28);
-        this.scene.add(m);
-        this.smoke.push({
-          mesh: m,
-          age: 0,
-          life: 3.4,
-          velocity: new THREE.Vector3(0.6, 1.7, 0.25),
-        });
-      });
-    }
-    if (!this.sim.paused)
-      for (let i = this.smoke.length - 1; i >= 0; i--) {
-        const s = this.smoke[i];
-        s.age += delta;
-        s.mesh.position.addScaledVector(s.velocity, delta);
-        s.mesh.scale.setScalar(0.28 + s.age * 0.7);
-        (s.mesh.material as THREE.MeshStandardMaterial).opacity =
-          0.42 * (1 - s.age / s.life);
-        if (s.age >= s.life) {
-          this.scene.remove(s.mesh);
-          (s.mesh.material as THREE.Material).dispose();
-          this.smoke.splice(i, 1);
-        }
-      }
-    (this.water.material as THREE.MeshStandardMaterial).roughness =
-      0.32 + Math.sin(now * 0.0004) * 0.05;
+    this.camera.position.y = Math.max(
+      this.camera.position.y,
+      height(
+        THREE.MathUtils.clamp(this.camera.position.x, -95, 95),
+        THREE.MathUtils.clamp(this.camera.position.z, -90, 90),
+      ) + 2.5,
+    );
+    this.updateShowcase();
     for (const signal of this.signalLights)
       (signal.mesh.material as THREE.MeshBasicMaterial).color.set(
-        this.sim.occupied.has(signal.key) ? '#bd694f' : '#83b478',
+        this.sim.occupied.has(signal.key) ? '#ff725a' : '#9be987',
       );
+    this.audio.update(
+      this.camera,
+      this.sim.trains.map((t, i) => ({
+        position: this.trains[i].position,
+        running: t.status === 'Running' && !t.held,
+        bridge:
+          Math.abs(
+            this.trains[i].position.x - riverX(this.trains[i].position.z),
+          ) < 6,
+        effort: 0.5 + t.cars * 0.07,
+        speed: this.sim.speed,
+      })),
+      delta,
+      frozen,
+    );
     this.renderer.render(this.scene, this.camera);
-    const w = this.host.clientWidth,
+    const width = this.host.clientWidth,
       h = this.host.clientHeight;
-    for (const label of this.labels) {
-      const p = label.position.clone().project(this.camera);
-      label.element.style.display =
+    const occupied: { x: number; y: number }[] = [];
+    const sorted = [...this.labels].sort(
+      (a, b) =>
+        a.position.distanceToSquared(this.camera.position) -
+        b.position.distanceToSquared(this.camera.position),
+    );
+    for (const label of sorted) {
+      const p = label.position.clone().project(this.camera),
+        x = (p.x * 0.5 + 0.5) * width,
+        y = (-p.y * 0.5 + 0.5) * h;
+      const overlap = occupied.some(
+        (r) => Math.abs(r.x - x) < 130 && Math.abs(r.y - y) < 50,
+      );
+      const visible =
         this.labelsVisible &&
+        !this.photoMode &&
         p.z > -1 &&
         p.z < 1 &&
-        Math.abs(p.x) < 1.05 &&
-        Math.abs(p.y) < 1.05
-          ? ''
-          : 'none';
-      label.element.style.transform = `translate(-50%, -100%) translate(${(p.x * 0.5 + 0.5) * w}px,${(-p.y * 0.5 + 0.5) * h}px)`;
+        x > 70 &&
+        x < width - 70 &&
+        y > 55 &&
+        y < h - 35 &&
+        !overlap;
+      label.element.style.display = visible ? '' : 'none';
+      if (visible) occupied.push({ x, y });
+      label.element.style.transform = `translate(-50%, -100%) translate(${x}px,${y}px)`;
     }
   };
+  get diagnostics() {
+    return {
+      fps: Math.round(this.fps),
+      calls: this.renderer.info.render.calls,
+      triangles: this.renderer.info.render.triangles,
+      geometries: this.renderer.info.memory.geometries,
+      textures: this.renderer.info.memory.textures,
+      particles: this.effects.activeCount,
+      quality: this.quality,
+      showcase: this.assetStatus,
+    };
+  }
+  private placeTrackside() {
+    const train = this.trains[this.selected];
+    const offset = new THREE.Vector3(8, 3, -12).applyAxisAngle(
+      new THREE.Vector3(0, 1, 0),
+      train.rotation.y,
+    );
+    this.camera.position.copy(train.position).add(offset);
+  }
+  setTrackside() {
+    this.setMode('3d');
+    this.following = false;
+    this.trackside = true;
+    this.followTransition = false;
+    this.placeTrackside();
+    this.controls.target.copy(this.trains[this.selected].position);
+  }
+  capturePhoto() {
+    this.renderer.render(this.scene, this.camera);
+    const a = document.createElement('a');
+    a.download = 'steam-atlas.png';
+    a.href = this.renderer.domElement.toDataURL('image/png');
+    a.click();
+  }
   setMode(mode: CameraMode) {
     if (this.mode === mode) return;
     const target = this.controls.target.clone(),
@@ -644,6 +800,8 @@ export class RailwayWorld {
           Math.tan(THREE.MathUtils.degToRad(this.camera.fov / 2));
     this.controls.dispose();
     this.mode = mode;
+    this.trackside = false;
+    this.followTransition = false;
     if (mode === 'iso') {
       this.camera = new THREE.OrthographicCamera(-90, 90, 90, -90, 0.1, 800);
       this.camera.position.copy(target).add(new THREE.Vector3(140, 155, 175));
@@ -668,17 +826,16 @@ export class RailwayWorld {
   follow(id: number) {
     this.selected = id;
     this.following = true;
-    const p = this.trains[id].position;
-    this.controls.target.copy(p);
-    this.camera.position.copy(p).add(new THREE.Vector3(19, 15, 23));
+    this.trackside = false;
+    this.followTransition = true;
     if (this.camera instanceof THREE.OrthographicCamera) {
       this.camera.zoom = 5;
-      this.camera.position.copy(p).add(new THREE.Vector3(140, 155, 175));
       this.camera.updateProjectionMatrix();
     }
-    this.controls.update();
   }
   overview() {
+    this.trackside = false;
+    this.followTransition = false;
     this.following = false;
     this.controls.target.set(0, 0, -7);
     this.camera.position.set(140, 155, 175);
@@ -705,19 +862,51 @@ export class RailwayWorld {
     this.controls.update();
   }
   setQuality(quality: string) {
+    this.quality = Object.hasOwn(qualitySettings, quality)
+      ? (quality as Quality)
+      : 'balanced';
+    const settings = qualitySettings[this.quality];
     this.renderer.setPixelRatio(
-      Math.min(
-        window.devicePixelRatio,
-        quality === 'high' ? 2 : quality === 'low' ? 1 : 1.75,
-      ),
+      Math.min(window.devicePixelRatio, settings.pixels),
     );
-    this.renderer.shadowMap.enabled = quality !== 'low';
+    const shadowsChanged =
+      this.renderer.shadowMap.enabled !== settings.shadows > 0;
+    this.renderer.shadowMap.enabled = settings.shadows > 0;
+    if (shadowsChanged) {
+      this.materials.forEach((mat) => {
+        mat.needsUpdate = true;
+      });
+      this.scene.traverse((o) => {
+        if (o instanceof THREE.Mesh)
+          (Array.isArray(o.material) ? o.material : [o.material]).forEach(
+            (mat) => {
+              mat.needsUpdate = true;
+            },
+          );
+      });
+    }
+    if (!settings.shadows) {
+      this.sunlight.shadow.map?.dispose();
+      this.sunlight.shadow.map = null;
+    }
+    if (
+      settings.shadows &&
+      this.sunlight.shadow.mapSize.x !== settings.shadows
+    ) {
+      this.sunlight.shadow.map?.dispose();
+      this.sunlight.shadow.map = null;
+      this.sunlight.shadow.mapSize.setScalar(settings.shadows);
+    }
+    (this.water.material as THREE.ShaderMaterial).uniforms.detail.value =
+      settings.water;
+    this.effects.setQuality(this.quality);
     this.resize();
   }
-  setEvening(enabled: boolean) {
-    this.sunlight.color.set(enabled ? '#ffc089' : '#fff2cb');
-    this.sunlight.intensity = enabled ? 2 : 3.2;
-    this.scene.background = new THREE.Color(enabled ? '#b7bfcc' : '#cbd5d4');
+  setTime(hour: number) {
+    if (Number.isFinite(hour)) {
+      this.atmosphere.hour = ((hour % 24) + 24) % 24;
+      this.atmosphere.update(0);
+    }
   }
   private resize() {
     const w = this.host.clientWidth,
@@ -735,6 +924,10 @@ export class RailwayWorld {
     }
     this.camera.updateProjectionMatrix();
   }
+  private visibilityChanged = () => {
+    this.previous = 0;
+    if (document.hidden) this.audio.silence();
+  };
   private pointerDown = (e: PointerEvent) => {
     this.down = { x: e.clientX, y: e.clientY };
   };
@@ -765,22 +958,17 @@ export class RailwayWorld {
     cancelAnimationFrame(this.frame);
     this.resizeObserver.disconnect();
     this.controls.dispose();
+    document.removeEventListener('visibilitychange', this.visibilityChanged);
     this.host.removeEventListener('pointerdown', this.pointerDown);
     this.host.removeEventListener('pointerup', this.pointerUp);
     this.labels.forEach((l) => l.element.remove());
-    const geos = new Set<THREE.BufferGeometry>(),
-      mats = new Set<THREE.Material>();
-    this.scene.traverse((o) => {
-      if (o instanceof THREE.Mesh) {
-        geos.add(o.geometry);
-        (Array.isArray(o.material) ? o.material : [o.material]).forEach((m) =>
-          mats.add(m),
-        );
-      }
-    });
-    geos.forEach((g) => g.dispose());
-    mats.forEach((m) => m.dispose());
-    this.smokeGeo.dispose();
+    this.audio.dispose();
+    this.rememberResources(this.scene);
+    this.resources.forEach((g) => g.dispose());
+    this.materials.forEach((m) => m.dispose());
+    this.resources.clear();
+    this.materials.clear();
+    this.sunlight.shadow.map?.dispose();
     this.renderer.dispose();
     this.renderer.domElement.remove();
   }

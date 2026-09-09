@@ -2,7 +2,7 @@
 
 **Purpose:** Turn the current railway sandbox into a visually rich management game with meaningful construction, dispatch, economic, and fleet decisions.  
 **Baseline:** Current repository at `315b7fb`, reviewed 9 September 2026.  
-**Status:** Proposed development plan. The features below are planned work, not implemented features.
+**Status:** Phased development plan. Phase 1 implementation is recorded in [the graphics implementation notes](PHASE_1_GRAPHICS.md); its browser acceptance checks and Phase 0 performance baseline remain open. Other phases below are planned work.
 
 ## Recommended direction
 
@@ -76,6 +76,8 @@ Some art production can proceed while systems are built once asset and network i
 **Boundary:** Keep the current content and economy during this phase. Finish the shared network contract before building the editor.
 
 ## Phase 1 — Upgrade graphics and atmosphere
+
+**Implementation:** Graphics, atmosphere, audio, showcase asset and camera controls implemented. See [implementation and verification notes](PHASE_1_GRAPHICS.md) for delivered features and remaining acceptance checks.
 
 **Player benefit:** The world looks worth exploring, and close train-follow views reveal attractive detail.
 

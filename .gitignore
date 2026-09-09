@@ -39,3 +39,7 @@ next-env.d.ts
 
 # TypeScript incremental cache
 *.tsbuildinfo
+
+# Blender automatic backups
+*.blend1
+*.blend2
