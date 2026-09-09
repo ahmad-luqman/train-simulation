@@ -1796,3 +1796,224 @@ p {
 .world-canvas[data-night='true'] ~ .map-bottom-left {
   color: #d7dfce;
 }
+
+/* Construction office: a readable work panel over the live miniature valley. */
+.network-editor {
+  position: absolute;
+  z-index: 35;
+  left: 14px;
+  top: 14px;
+  bottom: 14px;
+  width: min(410px, calc(100% - 28px));
+  overflow-y: auto;
+  padding: 20px;
+  border: 1px solid #9daa96;
+  border-radius: 12px;
+  background: #f4f5ed;
+  color: #273c30;
+  box-shadow: 0 14px 45px #23372a35;
+  font-size: 1rem;
+  line-height: 1.5;
+}
+.network-editor-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 16px;
+}
+.network-editor h2 {
+  font-family: Georgia, serif;
+  font-size: 1.65rem;
+  margin: 0;
+}
+.network-editor h3 {
+  font-size: 1.05rem;
+  margin: 20px 0 10px;
+  font-weight: 650;
+}
+.network-editor p {
+  margin: 10px 0;
+}
+.network-editor label {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  font-size: 0.875rem;
+  margin: 12px 0;
+}
+.network-editor [data-slot='native-select-wrapper'] {
+  width: 100%;
+  min-width: 0;
+}
+.network-editor select,
+.network-editor input {
+  font-size: 0.875rem;
+  min-height: 36px;
+  background: #fffef8;
+}
+.network-editor [data-slot='tabs-list'] {
+  width: 100%;
+  background: #e0e6d9;
+  min-height: 38px;
+}
+.network-editor [data-slot='tabs-trigger'] {
+  font-size: 0.875rem;
+}
+.network-editor [data-slot='slider'] {
+  padding: 12px 0;
+}
+.network-editor .editor-inline {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 8px;
+}
+.editor-inline > * {
+  min-width: 0;
+}
+.editor-columns {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+.editor-actions {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.network-editor .button {
+  font-size: 0.875rem;
+  min-height: 36px;
+  justify-content: center;
+}
+.network-editor .button[aria-pressed='true'] {
+  background: #d5e8d7;
+  border-color: #598566;
+}
+.network-editor .button:disabled,
+.network-editor .icon-button:disabled {
+  opacity: 0.48;
+  cursor: not-allowed;
+}
+.editor-full {
+  width: 100%;
+  margin: 12px 0;
+}
+.construction-map {
+  width: 100%;
+  border-radius: 8px;
+  background: #233f34;
+  touch-action: none;
+  cursor: crosshair;
+}
+.network-editor .editor-hint {
+  color: #576758;
+  font-size: 0.875rem;
+}
+.editor-warning {
+  background: #fff0e8;
+  border-left: 3px solid #b95734;
+  padding: 10px;
+  color: #813b25;
+  font-size: 0.875rem;
+}
+.editor-valid {
+  background: #e1efdd;
+  border-left: 3px solid #51805c;
+  padding: 10px;
+  color: #315439;
+  font-size: 0.875rem;
+}
+.editor-metrics {
+  font-variant-numeric: tabular-nums;
+  font-size: 0.875rem;
+}
+.construction-cost {
+  margin: 14px 0;
+  padding: 12px;
+  background: #e9ecdf;
+  border-radius: 6px;
+}
+.construction-cost > div {
+  display: flex;
+  justify-content: space-between;
+  font-size: 0.875rem;
+  padding: 3px 0;
+}
+.construction-cost > div:last-child {
+  border-top: 1px solid #bbc6ae;
+  margin-top: 6px;
+  padding-top: 9px;
+  font-weight: bold;
+  font-size: 1rem;
+}
+.editor-callout {
+  border: 1px solid #c1ccba;
+  padding: 10px;
+  border-radius: 6px;
+}
+.editor-callout .button {
+  margin: 3px;
+}
+.service-stop-editor {
+  padding: 0;
+  list-style: none;
+}
+.service-stop-editor li {
+  display: flex;
+  align-items: center;
+  padding: 7px 0;
+  border-bottom: 1px solid #d7dfce;
+}
+.service-stop-editor li > span {
+  flex: 1;
+  font-size: 0.875rem;
+}
+.service-stop-editor .icon-button {
+  flex-shrink: 0;
+  width: 30px;
+}
+.network-editor details {
+  font-size: 0.875rem;
+  margin: 14px 0;
+}
+.network-editor details ol {
+  padding-left: 20px;
+}
+.construction-ledger {
+  list-style: none;
+  padding: 0;
+}
+.construction-ledger li {
+  border-top: 1px solid #cbd4c1;
+  padding: 12px 0;
+  font-size: 0.875rem;
+}
+.construction-ledger li > div {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+.editor-feedback {
+  display: block;
+  position: sticky;
+  bottom: 0;
+  padding: 12px;
+  border: 1px solid #b5c5a9;
+  background: #fafff1;
+  box-shadow: 0 2px 12px #20302120;
+  font-size: 0.875rem;
+}
+@media (max-width: 680px) {
+  .network-editor {
+    left: 6px;
+    top: 6px;
+    bottom: 6px;
+    width: calc(100% - 12px);
+    padding: 14px;
+  }
+  .network-editor .construction-map {
+    max-height: 240px;
+  }
+}

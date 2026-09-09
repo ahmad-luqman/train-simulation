@@ -38,13 +38,16 @@ import {
   NativeSelect,
   NativeSelectOption,
 } from '@/components/ui/native-select';
-import { cities, corridors, locomotives, money } from '@/lib/railway/data';
+import { locomotives, money } from '@/lib/railway/data';
+import { NetworkEditor } from './network-editor';
+import { nodeAt } from '@/lib/railway/network';
 import { Simulation } from '@/lib/railway/simulation';
 import type { RailwayWorld, CameraMode } from '@/lib/railway/world';
 import { makePortraits } from '@/lib/railway/portraits';
 import type { AudioMix } from '@/lib/railway/audio';
 import { registerRailwayTools } from '@/lib/railway/webmcp';
-const SAVE_KEY = 'steam-atlas-save-v1';
+const SAVE_KEY = 'steam-atlas-save-v2';
+const LEGACY_SAVE_KEY = 'steam-atlas-save-v1';
 export default function Game() {
   'use no memo'; // The mutable simulation is sampled by a render timer, outside React Compiler ownership.
   const mount = useRef<HTMLDivElement>(null),
@@ -72,7 +75,8 @@ export default function Game() {
     [resetOpen, setResetOpen] = useState(false),
     [rosterOpen, setRosterOpen] = useState(false),
     [detailsOpen, setDetailsOpen] = useState(false),
-    [quality, setQuality] = useState('balanced');
+    [quality, setQuality] = useState('balanced'),
+    [editorOpen, setEditorOpen] = useState(false);
   useEffect(() => {
     let active = true;
     let instance: RailwayWorld | undefined;
@@ -185,12 +189,14 @@ export default function Game() {
   }
   function load() {
     try {
-      const data = localStorage.getItem(SAVE_KEY);
+      const data =
+        localStorage.getItem(SAVE_KEY) ?? localStorage.getItem(LEGACY_SAVE_KEY);
       if (!data) {
         setNotice('No local save yet. Use Save to keep your railway.');
         return;
       }
       sim.current.restore(JSON.parse(data));
+      setEditorOpen(false);
       setTick((t) => t + 1);
       setNotice('Your railway has been restored.');
     } catch {
@@ -226,7 +232,7 @@ export default function Game() {
   }, [mode, follow]);
   const engine = locomotives[selected],
     train = sim.current.trains[selected],
-    route = engine.route,
+    route = sim.current.services[selected].stops,
     [a, b] = sim.current.endpoints(train),
     running = train.status === 'Running' && !paused;
   const date = new Date(
@@ -240,9 +246,7 @@ export default function Game() {
   const active = sim.current.trains.filter((t) => !t.held).length;
   const progress = Math.min(
     100,
-    (train.distance /
-      (sim.current.lengths.get([a, b].sort((x, y) => x - y).join('-')) || 1)) *
-      100,
+    (train.distance / sim.current.track(train).length) * 100,
   );
   void tick;
   return (
@@ -388,7 +392,10 @@ export default function Game() {
             ))}
           </div>
           <div className="roster-footer">
-            <span>12 locomotives · 8 destinations</span>
+            <span>
+              12 locomotives · {sim.current.network.stations.length}{' '}
+              destinations
+            </span>
             <small>A living collection in miniature.</small>
             <div className="collection-line">
               <span>MERIDIAN ARCHIVES</span>
@@ -425,10 +432,20 @@ export default function Game() {
             <div className="eyebrow">Region 01 / Sandbox</div>
             <h1>Meridian Valley</h1>
             <div>
-              8 cities <span>·</span> 13 rail corridors <span>·</span> Est. 1885
+              {sim.current.network.stations.length} stations <span>·</span>{' '}
+              {sim.current.network.edges.length} tracks <span>·</span> Est. 1885
             </div>
           </div>
           <div className="map-toolbar">
+            <div className="toolbar-row">
+              <button
+                className="map-button"
+                aria-expanded={editorOpen}
+                onClick={() => setEditorOpen(!editorOpen)}
+              >
+                Build & route
+              </button>
+            </div>
             <div className="toolbar-row">
               <button
                 className="map-button"
@@ -715,30 +732,38 @@ export default function Game() {
                   strokeWidth="7"
                   opacity=".55"
                 />
-                {corridors.map(([a, b]) => (
-                  <line
-                    key={`${a}-${b}`}
-                    x1={cities[a].x}
-                    y1={cities[a].z}
-                    x2={cities[b].x}
-                    y2={cities[b].z}
-                    stroke="#89917a"
+                {sim.current.network.edges.map((edge) => (
+                  <polyline
+                    key={edge.id}
+                    points={edge.points.map((p) => `${p.x},${p.z}`).join(' ')}
+                    fill="none"
+                    stroke={edge.built ? '#397758' : '#89917a'}
                     strokeWidth=".7"
                   />
                 ))}
-                {cities.map((c, i) => (
+                {sim.current.network.nodes.map((c) => (
                   <circle
                     key={c.id}
                     cx={c.x}
                     cy={c.z}
-                    r={i === a ? 3.5 : 2}
-                    fill={i === a ? '#395e47' : '#a09978'}
+                    r={c.id === a ? 3.5 : 2}
+                    fill={c.id === a ? '#395e47' : '#a09978'}
                   />
                 ))}
               </svg>
               <span className="minimap-title">NETWORK OVERVIEW</span>
             </button>
           </div>
+          {editorOpen && (
+            <NetworkEditor
+              sim={sim.current}
+              world={world.current}
+              selected={selected}
+              tick={tick}
+              close={() => setEditorOpen(false)}
+              changed={() => setTick((t) => t + 1)}
+            />
+          )}
           <div className="mobile-actions">
             <button onClick={() => setRosterOpen(true)}>
               <TrainFront size={17} /> Fleet
@@ -782,7 +807,7 @@ export default function Game() {
           <p className="engine-subtitle">
             {selected === 10
               ? 'Mountain express'
-              : cities[route[0]].cargo + ' service'}{' '}
+              : nodeAt(sim.current.network, route[0]).cargo + ' service'}{' '}
             <span>·</span> Meridian collection
           </p>
           <div className="train-actions">
@@ -797,6 +822,7 @@ export default function Game() {
               className="button"
               onClick={() => {
                 train.held = !train.held;
+                train.stopAtStation = false;
                 setTick((t) => t + 1);
               }}
             >
@@ -831,10 +857,10 @@ export default function Game() {
               </span>
             </div>
             <div className="route-stops">
-              {route.map((id, index) => (
-                <div className={index === train.leg ? 'current' : ''} key={id}>
+              {route.map((id) => (
+                <div className={id === a ? 'current' : ''} key={id}>
                   <i />
-                  <span>{cities[id].name}</span>
+                  <span>{nodeAt(sim.current.network, id).name}</span>
                 </div>
               ))}
             </div>
@@ -842,7 +868,8 @@ export default function Game() {
               <span style={{ width: `${progress}%` }} />
             </div>
             <p>
-              Next: {cities[b].name} <span>·</span> {cities[b].cargo}
+              Next: {nodeAt(sim.current.network, b).name} <span>·</span>{' '}
+              {nodeAt(sim.current.network, b).cargo}
             </p>
           </section>
           <section className="consist-section">
@@ -975,6 +1002,7 @@ export default function Game() {
                 <button
                   className="button primary"
                   onClick={() => {
+                    setEditorOpen(false);
                     const fresh = new Simulation();
                     sim.current.restore(fresh.save());
                     sim.current.paused = false;

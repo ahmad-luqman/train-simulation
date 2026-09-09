@@ -1,6 +1,18 @@
-import { cities, corridors, locomotives } from './data';
-export const edgeKey = (a: number, b: number) =>
-  [a, b].sort((x, y) => x - y).join('-');
+import { locomotives } from './data';
+import {
+  createNetwork,
+  edgeAt,
+  measure,
+  nodeAt,
+  planService,
+  quoteConstruction,
+  type Construction,
+  type Cost,
+  type RailNetwork,
+  type RouteLeg,
+  type Service,
+} from './network';
+export { edgeKey } from './network';
 export type TrainState = {
   id: number;
   leg: number;
@@ -12,15 +24,39 @@ export type TrainState = {
   revenue: number;
   status: 'Running' | 'At station' | 'At signal' | 'On hold';
   load: number;
+  stopAtStation?: boolean;
+};
+export type ConstructionRecord = {
+  id: number;
+  action: 'build' | 'station' | 'platform' | 'bulldoze' | 'undo';
+  edge?: string;
+  station?: string;
+  platform?: string;
+  node?: number;
+  cost: Cost;
+  amount: number;
+  reversed?: boolean;
+  undoOf?: number;
+  used?: boolean;
 };
 export type SaveState = {
-  version: 1;
+  version: 2;
   elapsed: number;
+  accumulator: number;
   treasury: number;
   delivered: number;
   trains: TrainState[];
+  network: RailNetwork;
+  services: Service[];
+  construction: ConstructionRecord[];
 };
 export class Simulation {
+  network = createNetwork();
+  services: Service[] = locomotives.map((l, id) =>
+    planService(this.network, id, `${l.name} service`, l.route, 3.5),
+  );
+  construction: ConstructionRecord[] = [];
+  revision = 0;
   trains: TrainState[] = locomotives.map((_, id) => ({
     id,
     leg: 0,
@@ -38,69 +74,91 @@ export class Simulation {
   elapsed = 0;
   speed = 1;
   paused = false;
-  events: string[] = [
-    'Meridian Railway is open. All services ready for dispatch.',
-  ];
-  lengths = new Map<string, number>();
+  events = ['Meridian Railway is open. All services ready for dispatch.'];
+  lengths = new Map(this.network.edges.map((e) => [e.id, e.length]));
   occupied = new Map<string, number>();
-  constructor() {
-    for (const [a, b] of corridors)
-      this.lengths.set(
-        edgeKey(a, b),
-        Math.hypot(cities[a].x - cities[b].x, cities[a].z - cities[b].z),
-      );
-  }
+  private accumulator = 0;
   endpoints(t: TrainState, offset = 0) {
-    const r = locomotives[t.id].route;
-    const leg = (t.leg + offset + r.length) % r.length;
-    return [r[leg], r[(leg + 1) % r.length]] as const;
+    const legs = this.services[t.id].legs,
+      leg = legs[(t.leg + offset + legs.length) % legs.length];
+    return [leg.from, leg.to] as const;
+  }
+  track(t: TrainState, offset = 0) {
+    const legs = this.services[t.id].legs;
+    return edgeAt(
+      this.network,
+      legs[(t.leg + offset + legs.length) % legs.length].edge,
+    );
   }
   step(realDelta: number) {
-    if (this.paused) return;
-    // Fixed-sized substeps preserve reservations even at the fastest simulation speed.
-    let remaining = Math.min(realDelta, 0.25) * this.speed;
-    while (remaining > 0) {
-      const dt = Math.min(remaining, 0.05);
-      remaining -= dt;
-      this.elapsed += dt;
+    if (this.paused || !Number.isFinite(realDelta) || realDelta <= 0) return;
+    this.accumulator += Math.min(realDelta, 0.25) * this.speed;
+    while (this.accumulator >= 0.05 - 1e-10) {
+      this.accumulator = Math.max(0, this.accumulator - 0.05);
+      this.elapsed += 0.05;
       for (const t of this.trains) {
         if (t.held) {
           t.status = 'On hold';
           continue;
         }
         if (t.dwell > 0) {
-          t.dwell = Math.max(0, t.dwell - dt);
+          t.dwell = Math.max(0, t.dwell - 0.05);
           t.status = 'At station';
           continue;
         }
-        const [a, b] = this.endpoints(t),
-          key = edgeKey(a, b),
-          length = this.lengths.get(key)!;
-        const owner = this.occupied.get(key);
+        const edge = this.track(t),
+          owner = this.occupied.get(edge.block);
         if (owner !== undefined && owner !== t.id) {
           t.status = 'At signal';
           continue;
         }
-        this.occupied.set(key, t.id);
+        this.occupied.set(edge.block, t.id);
+        edge.used = true;
         t.status = 'Running';
+        if (
+          t.distance === 0 &&
+          this.services[t.id].stops.includes(this.endpoints(t)[0])
+        )
+          for (const record of this.construction)
+            if (
+              record.station === `station-${this.endpoints(t)[0]}` &&
+              !record.reversed
+            )
+              record.used = true;
         t.distance +=
-          (dt * locomotives[t.id].speed * 0.25) / (1 + (t.cars - 3) * 0.07);
-        if (t.distance >= length) {
-          const amount = Math.round((t.cars * 18 * t.load) / 100),
-            income = Math.round(amount * (40 + length * 1.7));
-          t.delivered += amount;
-          t.revenue += income;
-          this.delivered += amount;
-          this.treasury += income;
-          this.events.unshift(
-            `${locomotives[t.id].name} → ${cities[b].name} · ${amount} delivered · +$${income.toLocaleString('en-US')}`,
-          );
-          this.events = this.events.slice(0, 20);
-          this.occupied.delete(key);
-          t.leg = (t.leg + 1) % locomotives[t.id].route.length;
+          (0.05 * locomotives[t.id].speed * 0.25) / (1 + (t.cars - 3) * 0.07);
+        if (t.distance >= edge.length) {
+          const [, b] = this.endpoints(t),
+            service = this.services[t.id];
+          if (service.legs[t.leg].stop) {
+            for (const record of this.construction)
+              if (record.station === `station-${b}` && !record.reversed)
+                record.used = true;
+            const amount = Math.round((t.cars * 18 * t.load) / 100),
+              income = Math.round(amount * (40 + edge.length * 1.7));
+            t.delivered += amount;
+            t.revenue += income;
+            this.delivered += amount;
+            this.treasury += income;
+            this.events.unshift(
+              `${locomotives[t.id].name} → ${nodeAt(this.network, b).name} · ${amount} delivered · +$${income.toLocaleString('en-US')}`,
+            );
+            this.events = this.events.slice(0, 20);
+            t.dwell = service.dwell;
+            t.load = 60 + ((t.delivered + t.id * 3) % 37);
+            if (t.stopAtStation) {
+              t.held = true;
+              t.stopAtStation = false;
+            }
+          }
+          this.occupied.delete(edge.block);
+          t.leg = (t.leg + 1) % service.legs.length;
           t.distance = 0;
-          t.dwell = 3.5;
-          t.load = 60 + ((t.delivered + t.id * 3) % 37);
+          t.status = t.held
+            ? 'On hold'
+            : t.dwell > 0
+              ? 'At station'
+              : 'At signal';
         }
       }
     }
@@ -112,68 +170,701 @@ export class Simulation {
     this.treasury -= 8500;
     return true;
   }
+  stopForEditing(id: number) {
+    const t = this.trains[id];
+    if (!t) throw new Error('Choose a train.');
+    if (
+      t.distance === 0 &&
+      this.network.stations.some((s) => s.node === this.endpoints(t)[0])
+    ) {
+      t.held = true;
+      t.status = 'On hold';
+    } else {
+      t.held = false;
+      t.stopAtStation = true;
+    }
+  }
+  assignService(service: Service) {
+    const t = this.trains[service.trainId];
+    if (!t) throw new Error('Choose a train.');
+    validateService(this.network, service, service.trainId);
+    if (
+      !t.held ||
+      t.distance !== 0 ||
+      !this.network.stations.some((s) => s.node === this.endpoints(t)[0])
+    )
+      throw new Error(
+        'Stop this train at a station before changing its service.',
+      );
+    const at = this.endpoints(t)[0];
+    if (service.legs[0].from !== at)
+      throw new Error(
+        `The first stop must be ${nodeAt(this.network, at).name}, where this train is waiting.`,
+      );
+    this.services[t.id] = structuredClone(service);
+    t.leg = 0;
+    t.distance = 0;
+    t.dwell = service.dwell;
+    this.revision++;
+  }
+  // Include the trailing consist on the previous leg even after the locomotive has left it.
+  protectedEdges() {
+    const result = new Set<string>();
+    for (const t of this.trains) {
+      result.add(this.track(t).id);
+      let rear = 5.3 + t.cars * 3 - t.distance,
+        offset = -1;
+      while (rear > 0 && -offset <= this.services[t.id].legs.length) {
+        const e = this.track(t, offset);
+        result.add(e.id);
+        rear -= e.length;
+        offset--;
+      }
+    }
+    return result;
+  }
+  private worksiteReason(nodes: number[], parent?: string) {
+    if (
+      parent &&
+      (this.occupied.has(edgeAt(this.network, parent).block) ||
+        this.protectedEdges().has(parent))
+    )
+      return 'The parent corridor is occupied. Wait for it to clear.';
+    for (const t of this.trains) {
+      if (t.distance === 0) continue;
+      const [a, b] = this.endpoints(t),
+        edge = this.track(t),
+        clearance = 5.3 + t.cars * 3;
+      if (
+        (nodes.includes(a) && t.distance < clearance + 3) ||
+        (nodes.includes(b) && edge.length - t.distance < clearance + 3)
+      )
+        return `${locomotives[t.id].name} is inside the turnout work area. Wait for clearance.`;
+    }
+    return undefined;
+  }
+  quote(input: Construction) {
+    const quote = quoteConstruction(this.network, input);
+    if (quote.edge) {
+      const reason = this.worksiteReason(
+        [quote.edge.a, quote.edge.b],
+        input.kind === 'loop' ? input.parent : undefined,
+      );
+      if (reason) quote.errors.push(reason);
+    }
+    if (quote.cost.total > this.treasury)
+      quote.errors.push('Insufficient funds for this construction.');
+    return quote;
+  }
+  build(input: Construction) {
+    const q = this.quote(input);
+    if (q.errors.length || !q.edge)
+      throw new Error(q.errors.join(' ') || 'Invalid construction.');
+    if (q.node) {
+      this.network.nodes.push(q.node);
+      this.network.nextNode++;
+    }
+    if (q.station) {
+      this.network.stations.push(q.station);
+      this.network.nextPlatform++;
+    }
+    this.network.edges.push(q.edge);
+    this.network.nextEdge++;
+    this.treasury -= q.cost.total;
+    this.construction.push({
+      id: this.construction.length + 1,
+      action: 'build',
+      edge: q.edge.id,
+      station: q.station?.id,
+      node: q.node?.id,
+      cost: { ...q.cost },
+      amount: q.cost.total,
+    });
+    this.changed();
+    return q.edge.id;
+  }
+  stationCost(node: number) {
+    return this.network.stations.some((s) => s.node === node) ? 6500 : 12000;
+  }
+  addStation(node: number, name: string) {
+    const n = nodeAt(this.network, node),
+      existing = this.network.stations.find((s) => s.node === node);
+    if (!n || !name.trim() || name.trim().length > 40)
+      throw new Error(
+        'Choose an endpoint and a station name of 1–40 characters.',
+      );
+    if (existing && existing.platforms.length >= 4)
+      throw new Error('This station already has four platforms.');
+    const reason = this.worksiteReason([node]);
+    if (reason) throw new Error(reason);
+    const total = this.stationCost(node);
+    if (this.treasury < total)
+      throw new Error('Insufficient funds for station work.');
+    const platform = `platform-${this.network.nextPlatform++}`;
+    const station = existing ?? {
+      id: `station-${node}`,
+      node,
+      name: name.trim(),
+      platforms: [],
+      built: true,
+    };
+    station.platforms.push(platform);
+    if (!existing) {
+      this.network.stations.push(station);
+      n.name = station.name;
+    }
+    this.treasury -= total;
+    this.construction.push({
+      id: this.construction.length + 1,
+      action: existing ? 'platform' : 'station',
+      station: station.id,
+      platform,
+      node,
+      cost: { track: 0, earthworks: 0, bridges: 0, station: total, total },
+      amount: total,
+    });
+    this.changed();
+  }
+  removalReason(id: string) {
+    const edge = edgeAt(this.network, id);
+    if (!edge) return 'This track no longer exists.';
+    if (!edge.built)
+      return 'The original railway is protected. Only player-built track can be removed.';
+    if (this.protectedEdges().has(id) || this.occupied.has(edge.block))
+      return 'A train or its trailing consist occupies this infrastructure.';
+    if (this.services.some((s) => s.legs.some((l) => l.edge === id)))
+      return 'This track is assigned to a service. Change that service at a station first.';
+    if (this.network.edges.some((e) => e.id !== id && e.block === id))
+      return 'Remove the attached passing loop first.';
+    return undefined;
+  }
+  bulldoze(id: string) {
+    const reason = this.removalReason(id);
+    if (reason) throw new Error(reason);
+    this.network.edges = this.network.edges.filter((e) => e.id !== id);
+    this.construction.push({
+      id: this.construction.length + 1,
+      action: 'bulldoze',
+      edge: id,
+      cost: { track: 0, earthworks: 0, bridges: 0, station: 0, total: 0 },
+      amount: 0,
+    });
+    this.changed();
+  }
+  undoReason(record: ConstructionRecord) {
+    if (
+      record.reversed ||
+      !['build', 'station', 'platform'].includes(record.action)
+    )
+      return 'This purchase cannot be undone.';
+    if (record.used)
+      return 'This station work has entered service and can no longer be refunded.';
+    if (record.edge) {
+      const reason = this.removalReason(record.edge);
+      if (reason) return reason;
+      if (edgeAt(this.network, record.edge).used)
+        return 'This track has entered service. Bulldoze it without a refund after unassigning it.';
+    }
+    if (record.station) {
+      const station = this.network.stations.find(
+        (s) => s.id === record.station,
+      );
+      if (!station) return 'This station no longer exists.';
+      if (this.services.some((s) => s.stops.includes(station.node)))
+        return 'This station is assigned to a service.';
+      const reason = this.worksiteReason([station.node]);
+      if (reason) return reason;
+      if (record.action !== 'platform' && station.platforms.length > 1)
+        return 'Undo the additional platform purchases first.';
+    }
+    if (
+      record.node !== undefined &&
+      record.action === 'build' &&
+      this.network.edges.some(
+        (e) =>
+          e.id !== record.edge && (e.a === record.node || e.b === record.node),
+      )
+    )
+      return 'Another track depends on this endpoint. Remove it first.';
+    if (
+      record.node !== undefined &&
+      record.action === 'build' &&
+      !record.station &&
+      this.network.stations.some((s) => s.node === record.node)
+    )
+      return 'Undo the station purchase at this endpoint first.';
+    return undefined;
+  }
+  undo(id: number) {
+    const record = this.construction.find((r) => r.id === id);
+    if (!record) throw new Error('Choose a construction purchase.');
+    const reason = this.undoReason(record);
+    if (reason) throw new Error(reason);
+    if (record.edge)
+      this.network.edges = this.network.edges.filter(
+        (e) => e.id !== record.edge,
+      );
+    if (record.station) {
+      const station = this.network.stations.find(
+        (s) => s.id === record.station,
+      )!;
+      if (record.action === 'platform')
+        station.platforms = station.platforms.filter(
+          (p) => p !== record.platform,
+        );
+      else
+        this.network.stations = this.network.stations.filter(
+          (s) => s.id !== record.station,
+        );
+    }
+    if (record.node !== undefined && record.action === 'build')
+      this.network.nodes = this.network.nodes.filter(
+        (n) => n.id !== record.node,
+      );
+    this.treasury += record.amount;
+    record.reversed = true;
+    this.construction.push({
+      id: this.construction.length + 1,
+      action: 'undo',
+      undoOf: record.id,
+      edge: record.edge,
+      station: record.station,
+      cost: { ...record.cost },
+      amount: -record.amount,
+    });
+    this.changed();
+  }
+  private changed() {
+    this.lengths = new Map(this.network.edges.map((e) => [e.id, e.length]));
+    this.revision++;
+  }
   save(): SaveState {
-    return {
-      version: 1,
+    return structuredClone({
+      version: 2,
       elapsed: this.elapsed,
+      accumulator: this.accumulator,
       treasury: this.treasury,
       delivered: this.delivered,
-      trains: this.trains.map((t) => ({ ...t })),
-    };
+      trains: this.trains,
+      network: this.network,
+      services: this.services,
+      construction: this.construction,
+    });
   }
   restore(value: unknown) {
-    const s = value as SaveState;
+    // Validate a detached candidate; malformed saves cannot change the live world or treasury.
+    const raw = value as SaveState;
+    if (!raw || ![1, 2].includes(raw.version))
+      throw new Error('This save version is not compatible.');
+    const candidate = new Simulation();
+    const s = structuredClone(raw);
+    if (raw.version === 2) {
+      validateNetwork(s.network);
+      candidate.network = s.network;
+      if (
+        !Array.isArray(s.services) ||
+        s.services.length !== locomotives.length
+      )
+        throw new Error('Invalid service roster.');
+      s.services.forEach((service, i) =>
+        validateService(s.network, service, i),
+      );
+      candidate.services = s.services;
+      if (!Array.isArray(s.construction) || s.construction.length > 10000)
+        throw new Error('Invalid construction history.');
+      s.construction.forEach((r, i) => {
+        if (
+          !r ||
+          r.id !== i + 1 ||
+          !['build', 'station', 'platform', 'bulldoze', 'undo'].includes(
+            r.action,
+          ) ||
+          !Number.isFinite(r.amount) ||
+          !validCost(r.cost) ||
+          Math.abs(r.amount) !== r.cost.total ||
+          (r.action === 'undo' ? r.amount > 0 : r.amount < 0) ||
+          (r.reversed !== undefined && typeof r.reversed !== 'boolean') ||
+          (r.used !== undefined && typeof r.used !== 'boolean')
+        )
+          throw new Error('Invalid construction ledger.');
+        if (
+          (r.edge !== undefined && typeof r.edge !== 'string') ||
+          (r.station !== undefined && typeof r.station !== 'string') ||
+          (r.node !== undefined && !Number.isInteger(r.node))
+        )
+          throw new Error('Invalid construction reference.');
+      });
+      for (const record of s.construction) {
+        if (record.action === 'build') {
+          const edge = edgeAt(s.network, record.edge ?? '');
+          if (
+            !record.edge ||
+            record.cost.track <= 0 ||
+            (edge && JSON.stringify(record.cost) !== JSON.stringify(edge.cost))
+          )
+            throw new Error(
+              'Construction cost does not match the purchased track.',
+            );
+          if (
+            !edge &&
+            !record.reversed &&
+            !s.construction.some(
+              (r) => r.action === 'bulldoze' && r.edge === record.edge,
+            )
+          )
+            throw new Error('Purchased track is missing.');
+          if (
+            record.node !== undefined &&
+            edge &&
+            edge.a !== record.node &&
+            edge.b !== record.node
+          )
+            throw new Error('Construction endpoint does not match its track.');
+          if (
+            record.station !== undefined &&
+            record.station !== `station-${record.node}`
+          )
+            throw new Error(
+              'Construction station does not match its endpoint.',
+            );
+        }
+        if (record.action === 'station' || record.action === 'platform') {
+          if (
+            record.cost.station !==
+              (record.action === 'station' ? 12000 : 6500) ||
+            record.cost.total !== record.cost.station ||
+            !record.platform ||
+            record.station !== `station-${record.node}`
+          )
+            throw new Error('Invalid station purchase.');
+          const station = s.network.stations.find(
+            (st) => st.id === record.station,
+          );
+          if (
+            !record.reversed &&
+            (!station || !station.platforms.includes(record.platform))
+          )
+            throw new Error('Purchased platform is missing.');
+        }
+        if (record.action === 'undo') {
+          const original = s.construction.find((r) => r.id === record.undoOf);
+          if (
+            !original ||
+            original.id >= record.id ||
+            !original.reversed ||
+            !['build', 'station', 'platform'].includes(original.action) ||
+            original.amount !== -record.amount ||
+            original.edge !== record.edge ||
+            original.station !== record.station
+          )
+            throw new Error('Invalid construction refund.');
+        }
+        if (
+          record.reversed &&
+          s.construction.filter((r) => r.undoOf === record.id).length !== 1
+        )
+          throw new Error('A reversed purchase needs exactly one refund.');
+      }
+      for (const edge of s.network.edges.filter((e) => e.built))
+        if (
+          s.construction.filter(
+            (r) => r.action === 'build' && r.edge === edge.id && !r.reversed,
+          ).length !== 1
+        )
+          throw new Error('Track purchase is missing from the ledger.');
+      candidate.construction = s.construction;
+      if (
+        !Number.isFinite(s.accumulator) ||
+        s.accumulator < 0 ||
+        s.accumulator >= 0.05 + 1e-9
+      )
+        throw new Error('Invalid simulation clock.');
+      candidate.accumulator = s.accumulator;
+    }
     if (
-      !s ||
-      s.version !== 1 ||
-      !Number.isFinite(s.elapsed) ||
-      s.elapsed < 0 ||
-      !Number.isFinite(s.treasury) ||
-      s.treasury < 0 ||
-      !Number.isFinite(s.delivered) ||
-      s.delivered < 0 ||
+      ![s.elapsed, s.treasury, s.delivered].every(
+        (n) => Number.isFinite(n) && n >= 0,
+      ) ||
       !Array.isArray(s.trains) ||
       s.trains.length !== locomotives.length
     )
       throw new Error('This save is not compatible.');
     const occupancy = new Map<string, number>();
     s.trains.forEach((t, i) => {
-      const r = locomotives[i].route;
+      const legs = candidate.services[i].legs;
       if (
+        !t ||
         t.id !== i ||
         !Number.isInteger(t.leg) ||
         t.leg < 0 ||
-        t.leg >= r.length ||
+        t.leg >= legs.length ||
         !Number.isInteger(t.cars) ||
         t.cars < 3 ||
         t.cars > 6 ||
         typeof t.held !== 'boolean' ||
         !['Running', 'At station', 'At signal', 'On hold'].includes(t.status) ||
         ![t.distance, t.dwell, t.delivered, t.revenue, t.load].every(
-          Number.isFinite,
+          (n) => Number.isFinite(n) && n >= 0,
         ) ||
-        t.distance < 0 ||
-        t.dwell < 0 ||
-        t.delivered < 0 ||
-        t.revenue < 0 ||
-        t.load < 0 ||
-        t.load > 100
+        t.load > 100 ||
+        t.dwell > 60 ||
+        (t.stopAtStation !== undefined && typeof t.stopAtStation !== 'boolean')
       )
         throw new Error('Invalid train in save.');
-      const key = edgeKey(r[t.leg], r[(t.leg + 1) % r.length]);
-      if (t.distance > this.lengths.get(key)!)
-        throw new Error('Invalid train position.');
+      const edge = edgeAt(candidate.network, legs[t.leg].edge);
+      if (t.distance >= edge.length) throw new Error('Invalid train position.');
       if (t.distance > 0) {
-        if (occupancy.has(key))
+        if (occupancy.has(edge.block))
           throw new Error('Conflicting track reservations in save.');
-        occupancy.set(key, i);
+        occupancy.set(edge.block, i);
       }
     });
-    this.trains = s.trains.map((t) => ({ ...t }));
-    this.elapsed = s.elapsed;
-    this.treasury = s.treasury;
-    this.delivered = s.delivered;
+    candidate.trains = s.trains;
+    candidate.elapsed = s.elapsed;
+    candidate.treasury = s.treasury;
+    candidate.delivered = s.delivered;
+    this.network = candidate.network;
+    this.services = candidate.services;
+    this.construction = candidate.construction;
+    this.trains = candidate.trains;
+    this.elapsed = candidate.elapsed;
+    this.treasury = candidate.treasury;
+    this.delivered = candidate.delivered;
+    this.accumulator = candidate.accumulator;
     this.occupied = occupancy;
+    this.changed();
     this.events = ['Local railway save restored.'];
   }
+}
+function validCost(cost: Cost) {
+  return (
+    cost &&
+    [cost.track, cost.earthworks, cost.bridges, cost.station, cost.total].every(
+      (n) => Number.isSafeInteger(n) && n >= 0,
+    ) &&
+    cost.total === cost.track + cost.earthworks + cost.bridges + cost.station
+  );
+}
+function validateNetwork(n: RailNetwork) {
+  if (
+    !n ||
+    !Array.isArray(n.nodes) ||
+    !Array.isArray(n.edges) ||
+    !Array.isArray(n.stations) ||
+    n.nodes.length < 8 ||
+    n.nodes.length > 256 ||
+    n.edges.length < 13 ||
+    n.edges.length > 512
+  )
+    throw new Error('Invalid saved network.');
+  const ids = new Set<number>(),
+    edges = new Set<string>(),
+    platforms = new Set<string>(),
+    stations = new Set<string>();
+  for (const node of n.nodes) {
+    if (
+      !node ||
+      !Number.isSafeInteger(node.id) ||
+      node.id < 0 ||
+      ids.has(node.id) ||
+      ![node.x, node.y, node.z].every(Number.isFinite) ||
+      Math.abs(node.x) > 100 ||
+      Math.abs(node.z) > 100 ||
+      node.y < 0 ||
+      node.y > 40 ||
+      typeof node.name !== 'string' ||
+      !node.name.trim() ||
+      node.name.length > 48 ||
+      typeof node.cargo !== 'string'
+    )
+      throw new Error('Invalid network endpoint.');
+    ids.add(node.id);
+  }
+  for (const edge of n.edges) {
+    if (
+      !edge ||
+      typeof edge.id !== 'string' ||
+      !edge.id ||
+      edges.has(edge.id) ||
+      !ids.has(edge.a) ||
+      !ids.has(edge.b) ||
+      edge.a === edge.b ||
+      typeof edge.block !== 'string' ||
+      !['track', 'siding', 'loop'].includes(edge.kind) ||
+      typeof edge.built !== 'boolean' ||
+      typeof edge.used !== 'boolean' ||
+      !validCost(edge.cost) ||
+      !Array.isArray(edge.points) ||
+      edge.points.length < 2 ||
+      edge.points.length > 2000 ||
+      edge.points.some(
+        (p) =>
+          !p ||
+          ![p.x, p.y, p.z].every(Number.isFinite) ||
+          Math.abs(p.x) > 100 ||
+          Math.abs(p.z) > 100 ||
+          p.y < 0 ||
+          p.y > 40,
+      )
+    )
+      throw new Error('Invalid track in save.');
+    let length = 0;
+    for (let i = 1; i < edge.points.length; i++)
+      length += Math.hypot(
+        edge.points[i].x - edge.points[i - 1].x,
+        edge.points[i].y - edge.points[i - 1].y,
+        edge.points[i].z - edge.points[i - 1].z,
+      );
+    const a = nodeAt(n, edge.a),
+      b = nodeAt(n, edge.b),
+      first = edge.points[0],
+      last = edge.points[edge.points.length - 1];
+    if (
+      !Number.isFinite(edge.length) ||
+      Math.abs(length - edge.length) > 1e-6 ||
+      length < 1 ||
+      length > 300 ||
+      [
+        first.x - a.x,
+        first.y - a.y,
+        first.z - a.z,
+        last.x - b.x,
+        last.y - b.y,
+        last.z - b.z,
+      ].some((v) => Math.abs(v) > 1e-6) ||
+      ![edge.grade, edge.radius, edge.bridgeLength].every(
+        (v) => Number.isFinite(v) && v >= 0,
+      )
+    )
+      throw new Error('Invalid saved track geometry.');
+    const measured = measure(edge.points);
+    if (
+      Math.abs(edge.grade - measured.grade) > 1e-8 ||
+      Math.abs(edge.radius - measured.radius) > 1e-5 ||
+      Math.abs(edge.bridgeLength - measured.bridgeLength) > 1e-6 ||
+      (edge.built && (edge.grade > 0.04 || edge.radius < 10))
+    )
+      throw new Error('Invalid saved track constraints.');
+    edges.add(edge.id);
+  }
+  for (const e of n.edges)
+    if (
+      e.kind === 'loop'
+        ? !n.edges.some(
+            (p) =>
+              p.id === e.block &&
+              p.kind === 'track' &&
+              p.a === e.a &&
+              p.b === e.b,
+          )
+        : e.block !== e.id
+    )
+      throw new Error('Invalid corridor reservation group.');
+  for (const s of n.stations) {
+    if (
+      !s ||
+      s.id !== `station-${s.node}` ||
+      stations.has(s.id) ||
+      !ids.has(s.node) ||
+      typeof s.name !== 'string' ||
+      !s.name.trim() ||
+      s.name.length > 40 ||
+      typeof s.built !== 'boolean' ||
+      !Array.isArray(s.platforms) ||
+      s.platforms.length < 1 ||
+      s.platforms.length > 4
+    )
+      throw new Error('Invalid station.');
+    stations.add(s.id);
+    for (const p of s.platforms) {
+      if (
+        typeof p !== 'string' ||
+        !/^platform-\d+$/.test(p) ||
+        platforms.has(p)
+      )
+        throw new Error('Invalid platform.');
+      platforms.add(p);
+    }
+  }
+  const baseline = createNetwork();
+  if (
+    baseline.nodes.some((b) => {
+      const a = nodeAt(n, b.id);
+      return !a || a.x !== b.x || a.y !== b.y || a.z !== b.z;
+    }) ||
+    baseline.edges.some((b) => {
+      const e = edgeAt(n, b.id);
+      return (
+        !e ||
+        e.built ||
+        e.kind !== 'track' ||
+        e.a !== b.a ||
+        e.b !== b.b ||
+        JSON.stringify(e.points) !== JSON.stringify(b.points)
+      );
+    }) ||
+    baseline.stations.some(
+      (b) => !n.stations.some((s) => s.id === b.id && !s.built),
+    )
+  )
+    throw new Error('The original railway is missing or modified.');
+  if (
+    !Number.isSafeInteger(n.nextNode) ||
+    n.nextNode <= Math.max(...ids) ||
+    !Number.isSafeInteger(n.nextEdge) ||
+    n.nextEdge < 1 ||
+    n.edges.some(
+      (e) =>
+        e.built &&
+        (!/^track-\d+$/.test(e.id) || Number(e.id.slice(6)) >= n.nextEdge),
+    ) ||
+    !Number.isSafeInteger(n.nextPlatform) ||
+    n.nextPlatform <= Math.max(...[...platforms].map((p) => Number(p.slice(9))))
+  )
+    throw new Error('Invalid network ID counters.');
+}
+function validateService(network: RailNetwork, s: Service, id: number) {
+  if (
+    !s ||
+    s.id !== `service-${id}` ||
+    s.trainId !== id ||
+    typeof s.name !== 'string' ||
+    !s.name.trim() ||
+    s.name.length > 48 ||
+    !Array.isArray(s.stops) ||
+    s.stops.length < 2 ||
+    s.stops.length > 16 ||
+    new Set(s.stops).size !== s.stops.length ||
+    s.stops.some((n) => !network.stations.some((st) => st.node === n)) ||
+    !Number.isFinite(s.dwell) ||
+    s.dwell < 1 ||
+    s.dwell > 60 ||
+    !Array.isArray(s.legs) ||
+    s.legs.length < 2 ||
+    s.legs.length > 1024
+  )
+    throw new Error('Invalid service.');
+  s.legs.forEach((leg: RouteLeg, i) => {
+    const edge = edgeAt(network, leg?.edge),
+      next = s.legs[(i + 1) % s.legs.length];
+    if (
+      !edge ||
+      !next ||
+      !(
+        (edge.a === leg.from && edge.b === leg.to) ||
+        (edge.b === leg.from && edge.a === leg.to)
+      ) ||
+      leg.to !== next.from
+    )
+      throw new Error('Disconnected service itinerary.');
+  });
+  if (s.legs[0].from !== s.stops[0])
+    throw new Error('Invalid first service stop.');
+  const arrivals = s.legs.filter((leg) => leg.stop).map((leg) => leg.to);
+  const expected = [...s.stops.slice(1), s.stops[0]];
+  if (
+    s.legs.some((leg) => typeof leg.stop !== 'boolean') ||
+    JSON.stringify(arrivals) !== JSON.stringify(expected)
+  )
+    throw new Error('Service does not visit its ordered stops.');
 }

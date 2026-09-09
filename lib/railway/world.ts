@@ -1,7 +1,9 @@
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
-import { cities, corridors, locomotives } from './data';
-import { Simulation, edgeKey } from './simulation';
+import { cities, locomotives } from './data';
+import { Simulation } from './simulation';
+import { TrackCurve } from './network-view';
+import type { TrackEdge, Service } from './network';
 import { box, cylinder, material, house, locomotive, carriage } from './models';
 import {
   riverX,
@@ -30,11 +32,12 @@ export class RailwayWorld {
   sim: Simulation;
   mode: CameraMode = 'iso';
   selected = 10;
+  onMapPoint?: (x: number, z: number) => void;
   following = false;
   labelsVisible = true;
   fps = 60;
-  private clearancePoints = new Map<THREE.CatmullRomCurve3, THREE.Vector3[]>();
-  curves = new Map<string, THREE.CatmullRomCurve3>();
+  private clearancePoints = new Map<TrackCurve, THREE.Vector3[]>();
+  curves = new Map<string, TrackCurve>();
   trains: THREE.Group[] = [];
   cars: THREE.Group[][] = [];
   labels: { element: HTMLDivElement; position: THREE.Vector3 }[] = [];
@@ -52,6 +55,14 @@ export class RailwayWorld {
   private followTransition = false;
   private routeHighlight = new THREE.Group();
   private highlighted = -1;
+  private networkRevision = -1;
+  private railGroup = new THREE.Group();
+  private sceneryGroup = new THREE.Group();
+  private constructionPreview = new THREE.Group();
+  private constructionPreviewKey = '';
+  private networkOverlay = new THREE.Group();
+  private previewService: Service | undefined;
+  private overlay: 'off' | 'connectivity' | 'gradient' | 'cost' = 'off';
   private windowMaterials: THREE.MeshStandardMaterial[] = [];
   private resources = new Set<THREE.BufferGeometry>();
   private materials = new Set<THREE.Material>();
@@ -115,13 +126,21 @@ export class RailwayWorld {
     this.terrain();
     this.water = createRiver();
     this.scene.add(this.water);
-    this.railways();
-    this.towns();
-    this.nature();
+    this.scene.add(
+      this.railGroup,
+      this.sceneryGroup,
+      this.constructionPreview,
+      this.networkOverlay,
+    );
+    this.rebuildNetwork();
     this.rememberResources(this.scene);
     batchScenery(
       this.scene,
-      new Set([this.water, ...this.signalLights.map((s) => s.mesh)]),
+      new Set([
+        this.water,
+        ...this.signalLights.map((s) => s.mesh),
+        ...this.dynamicMeshes(),
+      ]),
     );
     this.effects = new SteamEffects(this.scene);
     this.scene.add(this.routeHighlight);
@@ -248,24 +267,213 @@ export class RailwayWorld {
     floor.receiveShadow = true;
     this.scene.add(floor);
   }
+  private dynamicMeshes() {
+    const meshes: THREE.Object3D[] = [];
+    [this.railGroup, this.sceneryGroup].forEach((g) =>
+      g.traverse((o) => meshes.push(o)),
+    );
+    return meshes;
+  }
+  private releaseGroup(group: THREE.Group) {
+    // Shared procedural materials/geometries may still be used by the terrain,
+    // fleet or detached LODs. Dispose only resources unique to this removed group.
+    const keepGeometry = new Set<THREE.BufferGeometry>(),
+      keepMaterial = new Set<THREE.Material>();
+    const collect = (o: THREE.Object3D) => {
+      if (o instanceof THREE.Mesh || o instanceof THREE.Line) {
+        keepGeometry.add(o.geometry);
+        (Array.isArray(o.material) ? o.material : [o.material]).forEach((m) =>
+          keepMaterial.add(m),
+        );
+      }
+    };
+    const parent = group.parent;
+    group.removeFromParent();
+    this.scene.traverse(collect);
+    this.showcase?.engines.forEach((o) => o.traverse(collect));
+    this.showcase?.tenders.forEach((o) => o.traverse(collect));
+    group.traverse((o) => {
+      if (o instanceof THREE.Mesh || o instanceof THREE.Line) {
+        if (!keepGeometry.has(o.geometry)) {
+          o.geometry.dispose();
+          this.resources.delete(o.geometry);
+        }
+        (Array.isArray(o.material) ? o.material : [o.material]).forEach((m) => {
+          if (!keepMaterial.has(m)) {
+            m.dispose();
+            this.materials.delete(m);
+          }
+        });
+      }
+    });
+    group.clear();
+    parent?.add(group);
+  }
+  private rebuildNetwork() {
+    this.releaseGroup(this.railGroup);
+    this.releaseGroup(this.sceneryGroup);
+    this.curves.clear();
+    this.clearancePoints.clear();
+    this.signalLights = [];
+    this.labels.forEach((l) => l.element.remove());
+    this.labels = [];
+    this.railways();
+    this.towns();
+    this.nature();
+    for (const station of this.sim.network.stations) {
+      const node = this.sim.network.nodes.find((n) => n.id === station.node)!;
+      if (station.built) {
+        const g = new THREE.Group();
+        g.position.y = node.y - 0.36;
+        stationKit(
+          g,
+          {
+            id: station.id,
+            name: station.name,
+            cargo: node.cargo,
+            x: node.x,
+            z: node.z,
+            color: '#b78065',
+          },
+          false,
+        );
+        this.sceneryGroup.add(g);
+        const el = document.createElement('div');
+        el.className = 'city-label';
+        const title = document.createElement('strong');
+        title.textContent = station.name;
+        const detail = document.createElement('span');
+        detail.textContent = 'Station';
+        el.appendChild(title);
+        el.appendChild(detail);
+        this.host.appendChild(el);
+        this.labels.push({
+          element: el,
+          position: new THREE.Vector3(node.x, node.y + 5, node.z - 3),
+        });
+      }
+      station.platforms
+        .slice(1)
+        .forEach((_, i) =>
+          box(
+            this.railGroup,
+            '#c4b99b',
+            node.x,
+            node.y - 0.1,
+            node.z - 3 - i * 2,
+            12,
+            0.5,
+            1.5,
+          ),
+        );
+    }
+    for (const edge of this.sim.network.edges.filter(
+      (e) => e.kind === 'siding',
+    )) {
+      const p = edge.points[edge.points.length - 1];
+      box(this.railGroup, '#b66745', p.x, p.y + 0.5, p.z, 2, 0.3, 0.3);
+    }
+    for (const group of [this.railGroup, this.sceneryGroup]) {
+      const before = new Set<THREE.BufferGeometry>();
+      group.traverse((o) => {
+        if (o instanceof THREE.Mesh || o instanceof THREE.Line)
+          before.add(o.geometry);
+      });
+      batchScenery(group, new Set(this.signalLights.map((s) => s.mesh)));
+      group.traverse((o) => {
+        if (o instanceof THREE.Mesh || o instanceof THREE.Line)
+          before.delete(o.geometry);
+      });
+      // These two procedural geometries are shared globally by the existing kits.
+      before.forEach((g) => {
+        if (
+          !(
+            g.type === 'BoxGeometry' &&
+            (g as THREE.BoxGeometry).parameters.width === 1
+          ) &&
+          g.type !== 'ExtrudeGeometry'
+        )
+          g.dispose();
+      });
+    }
+    this.networkRevision = this.sim.revision;
+    this.highlighted = -1;
+    this.setNetworkOverlay(this.overlay);
+  }
+  setConstructionPreview(edge?: TrackEdge, valid = true) {
+    const key = edge
+      ? JSON.stringify([
+          edge.a,
+          edge.b,
+          edge.points[0],
+          edge.points[Math.floor(edge.points.length / 2)],
+          edge.points.at(-1),
+          edge.length,
+          valid,
+        ])
+      : '';
+    if (key === this.constructionPreviewKey) return;
+    this.constructionPreviewKey = key;
+    this.releaseGroup(this.constructionPreview);
+    if (!edge) return;
+    const line = new THREE.Mesh(
+      new THREE.TubeGeometry(
+        new TrackCurve(edge),
+        Math.ceil(edge.length * 2),
+        0.35,
+        5,
+        false,
+      ),
+      new THREE.MeshBasicMaterial({
+        color: valid ? '#70e6ab' : '#ff795e',
+        depthTest: false,
+        transparent: true,
+        opacity: 0.8,
+      }),
+    );
+    line.position.y = 0.4;
+    line.renderOrder = 10;
+    this.constructionPreview.add(line);
+  }
+  setServicePreview(service?: Service) {
+    this.previewService = service;
+    this.highlighted = -1;
+  }
+  setNetworkOverlay(mode: 'off' | 'connectivity' | 'gradient' | 'cost') {
+    this.overlay = mode;
+    this.releaseGroup(this.networkOverlay);
+    if (mode === 'off') return;
+    for (const edge of this.sim.network.edges) {
+      const color =
+        mode === 'gradient'
+          ? edge.grade > 0.025
+            ? '#ffae67'
+            : '#71dbc2'
+          : mode === 'cost'
+            ? edge.cost.total > 35000
+              ? '#ffbc61'
+              : '#96c8ff'
+            : edge.built
+              ? '#70e6ab'
+              : '#b8d8e7';
+      const line = new THREE.Line(
+        new THREE.BufferGeometry().setFromPoints(
+          edge.points.map((p) => new THREE.Vector3(p.x, p.y + 0.5, p.z)),
+        ),
+        new THREE.LineBasicMaterial({ color, depthTest: false }),
+      );
+      line.renderOrder = 5;
+      this.networkOverlay.add(line);
+    }
+  }
   private railways() {
     const ties: { p: THREE.Vector3; angle: number }[] = [];
     const bridges: { p: THREE.Vector3; angle: number }[] = [];
-    for (const [a, b] of corridors) {
-      const start = new THREE.Vector3(cities[a].x, 0.36, cities[a].z),
-        end = new THREE.Vector3(cities[b].x, 0.36, cities[b].z);
-      const d = end.clone().sub(start),
-        normal = new THREE.Vector3(-d.z, 0, d.x).normalize();
-      const curve = new THREE.CatmullRomCurve3([
-        start,
-        start.clone().lerp(end, 0.22).addScaledVector(normal, 2.2),
-        start.clone().lerp(end, 0.78).addScaledVector(normal, 2.2),
-        end,
-      ]);
-      const key = edgeKey(a, b);
+    for (const edge of this.sim.network.edges) {
+      const curve = new TrackCurve(edge),
+        key = edge.id,
+        length = edge.length;
       this.curves.set(key, curve);
-      const length = curve.getLength();
-      this.sim.lengths.set(key, length);
       const points = curve.getSpacedPoints(Math.ceil(length * 2));
       // A broad ballast strip beneath the sleepers, and two continuous steel rails.
       for (const side of [-1, 0, 1]) {
@@ -307,7 +515,7 @@ export class RailwayWorld {
               }),
         );
         mesh.receiveShadow = true;
-        this.scene.add(mesh);
+        this.railGroup.add(mesh);
       }
       for (let n = 0; n < length; n += 0.85) {
         const p = curve.getPointAt(n / length),
@@ -321,14 +529,14 @@ export class RailwayWorld {
           tan = curve.getTangentAt(t);
         p.x += tan.z * 2;
         p.z -= tan.x * 2;
-        box(this.scene, '#515e4b', p.x, 1.3, p.z, 0.13, 2.6, 0.13);
+        box(this.railGroup, '#515e4b', p.x, p.y + 1, p.z, 0.13, 2.6, 0.13);
         const lamp = new THREE.Mesh(
           new THREE.SphereGeometry(0.25, 8, 6),
           new THREE.MeshBasicMaterial({ color: '#79a867' }),
         );
-        lamp.position.set(p.x, 2.6, p.z);
-        this.scene.add(lamp);
-        this.signalLights.push({ key, mesh: lamp });
+        lamp.position.set(p.x, p.y + 2.3, p.z);
+        this.railGroup.add(lamp);
+        this.signalLights.push({ key: edge.block, mesh: lamp });
       }
     }
     const inst = new THREE.InstancedMesh(
@@ -344,7 +552,7 @@ export class RailwayWorld {
       inst.setMatrixAt(i, obj.matrix);
     });
     inst.receiveShadow = true;
-    this.scene.add(inst);
+    this.railGroup.add(inst);
     for (let i = 0; i < bridges.length; i++) {
       const { p, angle } = bridges[i];
       const g = new THREE.Group();
@@ -360,14 +568,14 @@ export class RailwayWorld {
         }
       }
       if (i % 5 === 0) box(g, '#aaa48b', 0, -1.6, 0, 1.7, 2.8, 1);
-      this.scene.add(g);
+      this.railGroup.add(g);
     }
   }
   private towns() {
     const random = rng(903);
     cities.forEach((city, index) => {
       const urban = new THREE.Group();
-      this.scene.add(urban);
+      this.sceneryGroup.add(urban);
       for (let i = 0; i < (index === 4 ? 22 : 12); i++) {
         const col = i % 4,
           row = Math.floor(i / 4);
@@ -405,9 +613,9 @@ export class RailwayWorld {
           const px = x - 5 + col * 0.7,
             pz = z - 3 + row * 0.8;
           if (!this.sceneryClear(px, pz, 2.3)) continue;
-          box(this.scene, '#a49160', px, 0.06, pz, 0.69, 0.1, 0.79);
+          box(this.sceneryGroup, '#a49160', px, 0.06, pz, 0.69, 0.1, 0.79);
           box(
-            this.scene,
+            this.sceneryGroup,
             col % 2 ? '#c7b379' : '#9f925c',
             px,
             0.17,
@@ -422,8 +630,8 @@ export class RailwayWorld {
       [-77, -30],
       [5, -58],
     ]) {
-      cylinder(this.scene, '#847a61', x, 2.3, z, 1.1, 4);
-      cylinder(this.scene, '#697467', x, 4.7, z, 1.7, 1.7);
+      cylinder(this.sceneryGroup, '#847a61', x, 2.3, z, 1.1, 4);
+      cylinder(this.sceneryGroup, '#697467', x, 4.7, z, 1.7, 1.7);
     }
   }
   private nature() {
@@ -481,7 +689,7 @@ export class RailwayWorld {
     });
     trunk.castShadow = true;
     foliage.castShadow = true;
-    this.scene.add(trunk, foliage);
+    this.sceneryGroup.add(trunk, foliage);
     const rockGeo = new THREE.IcosahedronGeometry(1, 0);
     const rocks = new THREE.InstancedMesh(rockGeo, material('#939789'), 100);
     for (let i = 0; i < 100; i++) {
@@ -494,7 +702,7 @@ export class RailwayWorld {
       rocks.setMatrixAt(i, o.matrix);
     }
     rocks.castShadow = true;
-    this.scene.add(rocks);
+    this.sceneryGroup.add(rocks);
   }
   private syncCars(id: number) {
     const count = this.sim.trains[id].cars + 1;
@@ -516,19 +724,19 @@ export class RailwayWorld {
   }
   private positionOnRoute(id: number, distance: number) {
     const train = this.sim.trains[id];
-    let [a, b] = this.sim.endpoints(train);
-    let key = edgeKey(a, b),
-      length = this.sim.lengths.get(key)!;
-    if (distance < 0) {
-      [a, b] = this.sim.endpoints(train, -1);
-      key = edgeKey(a, b);
-      length = this.sim.lengths.get(key)!;
-      distance += length;
+    let offset = 0,
+      edge = this.sim.track(train),
+      [a] = this.sim.endpoints(train);
+    while (distance < 0 && -offset < this.sim.services[id].legs.length) {
+      offset--;
+      edge = this.sim.track(train, offset);
+      [a] = this.sim.endpoints(train, offset);
+      distance += edge.length;
     }
-    const curve = this.curves.get(key)!;
-    const forward = a < b;
-    const t = THREE.MathUtils.clamp(distance / length, 0, 1);
-    const u = forward ? t : 1 - t;
+    const curve = this.curves.get(edge.id)!;
+    const forward = a === edge.a,
+      t = THREE.MathUtils.clamp(distance / edge.length, 0, 1),
+      u = forward ? t : 1 - t;
     const p = curve.getPointAt(u),
       tangent = curve.getTangentAt(u).multiplyScalar(forward ? 1 : -1);
     return { p, angle: Math.atan2(-tangent.x, -tangent.z) };
@@ -547,7 +755,7 @@ export class RailwayWorld {
   }
   private rememberResources(root: THREE.Object3D) {
     root.traverse((o) => {
-      if (o instanceof THREE.Mesh) {
+      if (o instanceof THREE.Mesh || o instanceof THREE.Line) {
         this.resources.add(o.geometry);
         (Array.isArray(o.material) ? o.material : [o.material]).forEach((m) =>
           this.materials.add(m),
@@ -579,15 +787,16 @@ export class RailwayWorld {
     this.highlighted = this.selected;
     for (const child of this.routeHighlight.children) disposeModel(child);
     this.routeHighlight.clear();
-    const route = locomotives[this.selected].route;
+    const route = (this.previewService ?? this.sim.services[this.selected])
+      .legs;
     const mat = new THREE.MeshBasicMaterial({
       color: '#f4cd75',
       transparent: true,
       opacity: 0.32,
       depthWrite: false,
     });
-    route.forEach((a, i) => {
-      const curve = this.curves.get(edgeKey(a, route[(i + 1) % route.length]));
+    route.forEach((leg) => {
+      const curve = this.curves.get(leg.edge);
       if (!curve) return;
       const line = new THREE.Mesh(
         new THREE.TubeGeometry(
@@ -614,6 +823,7 @@ export class RailwayWorld {
     const frozen = this.sim.paused || this.photoMode || document.hidden;
     const motionDelta = frozen ? 0 : delta * this.sim.speed;
     if (!this.photoMode && !document.hidden) this.sim.step(delta);
+    if (this.networkRevision !== this.sim.revision) this.rebuildNetwork();
     const day = this.atmosphere.update(motionDelta);
     this.host.dataset.night = day < 0.25 ? 'true' : 'false';
     this.windowMaterials.forEach((m) => {
@@ -940,6 +1150,14 @@ export class RailwayWorld {
       (-(e.clientY - r.top) / r.height) * 2 + 1,
     );
     this.raycaster.setFromCamera(this.pointer, this.camera);
+    if (this.onMapPoint) {
+      const point = this.raycaster.ray.intersectPlane(
+        new THREE.Plane(new THREE.Vector3(0, 1, 0), -0.36),
+        new THREE.Vector3(),
+      );
+      if (point) this.onMapPoint(point.x, point.z);
+      return;
+    }
     const hits = this.raycaster.intersectObjects(
       [...this.trains, ...this.cars.flat()],
       true,

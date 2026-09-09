@@ -2,7 +2,7 @@
 
 **Purpose:** Turn the current railway sandbox into a visually rich management game with meaningful construction, dispatch, economic, and fleet decisions.  
 **Baseline:** Current repository at `315b7fb`, reviewed 9 September 2026.  
-**Status:** Phased development plan. Phase 1 implementation is recorded in [the graphics implementation notes](PHASE_1_GRAPHICS.md); its browser acceptance checks and Phase 0 performance baseline remain open. Other phases below are planned work.
+**Status:** Phased development plan. Phase 1 implementation is recorded in [the graphics implementation notes](PHASE_1_GRAPHICS.md); its browser acceptance checks and Phase 0 performance baseline remain open. Phase 2 construction and service editing are implemented in [the construction notes](PHASE_2_CONSTRUCTION.md), including their shared-network, fixed-tick and save-migration prerequisites. Browser acceptance and measured performance remain open; Phases 3–7 remain planned.
 
 ## Recommended direction
 
@@ -22,29 +22,29 @@ A player discovers that Ashford needs timber, connects Pinecrest, assigns a suit
 
 The project already has twelve selectable locomotives, eight towns, thirteen curved corridors, 3D and isometric cameras, train following, procedural scenery, smoke, signals, delivery revenue, wagon purchases, and a local save slot.
 
-The next version needs to address these specific limitations:
+The original baseline had these limitations; Phase 2 resolves network ownership and editable-network persistence as noted below:
 
-- **Network ownership:** Routes are fixed arrays. Track lengths begin as straight-line distances in the simulation and are replaced with curve lengths by the renderer. A shared network model should own geometry and distances.
+- **Network ownership — resolved in Phase 2:** Shared sampled geometry owns track lengths and prices; services store exact edge itineraries, including parallel tracks.
 - **Movement and dispatch:** Speed is effectively constant per train. Corridor reservations protect locomotive positions, but release at arrival before accounting for the complete trailing consist. Stations and junction movements are simplified.
 - **Economy:** Cargo loads are generated rather than taken from inventories. Deliveries create revenue without recurring fuel, maintenance, staff, or infrastructure costs.
 - **Fleet:** Locomotives share the same underlying model design with different liveries. Wagon purchases change a count rather than a cargo-specific consist.
 - **Presentation:** Terrain, buildings, water, and smoke are simple procedural geometry. Graphics presets mainly change resolution and shadows.
-- **Persistence and verification:** Saves assume the current fixed roster and routes. Existing simulation tests provide a useful base, but browser interaction and performance measurements still need to be established.
+- **Persistence and verification — partly resolved in Phase 2:** Version 2 saves persist edited networks, stations, services and construction accounting; original version 1 saves migrate atomically. The locomotive roster remains fixed. Browser interaction and performance measurements still need to be established.
 
 ## Phase overview
 
 Effort is relative complexity, not a calendar commitment. Select test hardware and complete Phase 0 before estimating dates. Each phase ends with a playable, reviewed build.
 
-| Phase | Outcome | Priority | Depends on | Effort |
-| --- | --- | --- | --- | --- |
-| 0 | Stable simulation and measured baseline | Required | Current game | Medium |
-| 1 | A much better looking and sounding valley | High | 0 | Large |
-| 2 | Player-built track and configurable services | High | 0 | Large |
-| 3 | Believable train movement and useful dispatch decisions | High | 2 | Large |
-| 4 | Supply chains, contracts, and a real operating economy | High | 2 and 3 | Large |
-| 5 | Distinct locomotives, maintenance, and depot logistics | Medium | 3 and 4 | Large |
-| 6 | Campaign progression and a world that responds | Medium | 1, 4, and 5 | Large |
-| 7 | Performance, usability, balancing, and release quality | Required for release | All chosen release features | Large |
+| Phase | Outcome                                                 | Priority             | Depends on                  | Effort |
+| ----- | ------------------------------------------------------- | -------------------- | --------------------------- | ------ |
+| 0     | Stable simulation and measured baseline                 | Required             | Current game                | Medium |
+| 1     | A much better looking and sounding valley               | High                 | 0                           | Large  |
+| 2     | Player-built track and configurable services            | High                 | 0                           | Large  |
+| 3     | Believable train movement and useful dispatch decisions | High                 | 2                           | Large  |
+| 4     | Supply chains, contracts, and a real operating economy  | High                 | 2 and 3                     | Large  |
+| 5     | Distinct locomotives, maintenance, and depot logistics  | Medium               | 3 and 4                     | Large  |
+| 6     | Campaign progression and a world that responds          | Medium               | 1, 4, and 5                 | Large  |
+| 7     | Performance, usability, balancing, and release quality  | Required for release | All chosen release features | Large  |
 
 **Milestone A — Scenic railway:** Phases 0 and 1.  
 **Milestone B — Playable railway tycoon:** Phases 2, 3, and 4.  
@@ -55,6 +55,8 @@ Some art production can proceed while systems are built once asset and network i
 ## Phase 0 — Stabilize the foundation
 
 **Player benefit:** Reliable controls, recoverable saves, and consistent behavior as the game grows.
+
+**Progress through Phase 2:** Shared network/terrain geometry, fixed 50 ms ticks, atomic construction/service commands, retained original saves and version 1 migration tests are implemented. Hidden tabs pause through the existing world lifecycle. The full module split, visual interpolation, performance baseline and browser matrix remain open.
 
 ### Work
 
@@ -109,6 +111,8 @@ Export game assets as glTF/GLB and verify materials and animation in the actual 
 **Boundary:** Ship one excellent train and one excellent town kit before remaking all twelve locomotives. Defer expensive full-scene reflections and volumetric clouds.
 
 ## Phase 2 — Let the player build and route
+
+**Implementation:** Construction, stations/platforms, sidings, passing-loop presets, exact service routing, protected removal/undo and version 2 persistence are implemented. See [implementation plan and verification](PHASE_2_CONSTRUCTION.md). Browser interaction and performance acceptance remain unverified.
 
 **Player benefit:** The player chooses where the railway goes and which services it operates.
 
@@ -239,13 +243,13 @@ Export game assets as glTF/GLB and verify materials and animation in the actual 
 
 These are proposed engineering budgets, not measurements of the current build. Confirm the exact test devices and adjust the budgets in Phase 0.
 
-| Test profile | Scenario | Proposed target |
-| --- | --- | --- |
-| Balanced desktop | 1080p overview, 24 trains, 8 towns, active junctions | Around 60 FPS with 95th-percentile frame time at or below 22 ms |
-| Low graphics | 720p equivalent internal resolution, same simulation | At least 30 FPS with 95th-percentile frame time at or below 40 ms |
-| Close follow | Showcase locomotive, station, smoke, and water | Meets the chosen profile without continual asset-loading stalls |
-| Long session | 60 minutes including construction, resets, and loading | No continuing growth in retained resources after cleanup |
-| First launch | Compressed assets required to start playing | Aim for 15 MB or less; load optional fleet detail later |
+| Test profile     | Scenario                                               | Proposed target                                                   |
+| ---------------- | ------------------------------------------------------ | ----------------------------------------------------------------- |
+| Balanced desktop | 1080p overview, 24 trains, 8 towns, active junctions   | Around 60 FPS with 95th-percentile frame time at or below 22 ms   |
+| Low graphics     | 720p equivalent internal resolution, same simulation   | At least 30 FPS with 95th-percentile frame time at or below 40 ms |
+| Close follow     | Showcase locomotive, station, smoke, and water         | Meets the chosen profile without continual asset-loading stalls   |
+| Long session     | 60 minutes including construction, resets, and loading | No continuing growth in retained resources after cleanup          |
+| First launch     | Compressed assets required to start playing            | Aim for 15 MB or less; load optional fleet detail later           |
 
 Prefer readable gameplay over visual effects when a budget is exceeded. Do not expand to a much larger map or fleet until the representative scenario passes.
 
@@ -260,16 +264,16 @@ Prefer readable gameplay over visual effects when a budget is exceeded. Do not e
 
 Keep the existing Three.js, React, and TypeScript stack. Extend it in modules rather than rewriting the whole application.
 
-| Area | Proposed responsibility | Main records |
-| --- | --- | --- |
-| Network | Shared geometry, connectivity, construction validation | Node, TrackEdge, Station, Platform, Turnout |
-| Simulation clock | Fixed ticks, deterministic randomness, commands | Clock, Seed, Command |
-| Dispatch | Reservations, movement permissions, route planning | Block, Reservation, Service, Schedule |
-| Fleet | Locomotive performance, wagon composition, servicing | Locomotive, Wagon, Consist, Depot |
-| Economy | Inventories, production, demand, contracts, accounting | Industry, Inventory, Cargo, Contract, LedgerEntry |
-| Rendering | Scene objects, asset loading, effects, camera interpolation | Asset manifest, scene handles, quality preset |
-| Persistence | Save versions, migration, validation, recovery | Save metadata, snapshot, migration fixtures |
-| Interface | Construction, route editor, inspector, dispatcher, finance | Selected entity, tool mode, presentation state |
+| Area             | Proposed responsibility                                     | Main records                                      |
+| ---------------- | ----------------------------------------------------------- | ------------------------------------------------- |
+| Network          | Shared geometry, connectivity, construction validation      | Node, TrackEdge, Station, Platform, Turnout       |
+| Simulation clock | Fixed ticks, deterministic randomness, commands             | Clock, Seed, Command                              |
+| Dispatch         | Reservations, movement permissions, route planning          | Block, Reservation, Service, Schedule             |
+| Fleet            | Locomotive performance, wagon composition, servicing        | Locomotive, Wagon, Consist, Depot                 |
+| Economy          | Inventories, production, demand, contracts, accounting      | Industry, Inventory, Cargo, Contract, LedgerEntry |
+| Rendering        | Scene objects, asset loading, effects, camera interpolation | Asset manifest, scene handles, quality preset     |
+| Persistence      | Save versions, migration, validation, recovery              | Save metadata, snapshot, migration fixtures       |
+| Interface        | Construction, route editor, inspector, dispatcher, finance  | Selected entity, tool mode, presentation state    |
 
 Move existing functionality gradually from `lib/railway/simulation.ts`, `lib/railway/world.ts`, and `components/railway/game.tsx` as each phase needs a boundary. Avoid a large refactor that produces no playable improvement. Renderer objects must not be serialized into saves or become authoritative for prices, route lengths, or reservations.
 
