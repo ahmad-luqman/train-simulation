@@ -1,0 +1,174 @@
+{
+  "recordedAt": "2026-09-09T23:16:53.547Z",
+  "environment": {
+    "node": "v22.19.0",
+    "os": "darwin",
+    "arch": "arm64",
+    "cpu": "Apple M4 Max",
+    "logicalCpus": 16
+  },
+  "scope": "Headless simulation only. Includes interlocking and swept collision backstop; excludes rendering and independent test oracle.",
+  "initializationMs": 74.70741700000002,
+  "simulation": {
+    "ticks": 72000,
+    "simulatedSeconds": 3600,
+    "initializationMs": 74.70741700000002,
+    "totalTickMs": 13941.100884999874,
+    "meanTickMs": 0.1936264011805538,
+    "p50TickMs": 0.1621660000000702,
+    "p95TickMs": 0.45166599999993196,
+    "p99TickMs": 0.6205409999993208,
+    "maxTickMs": 6.730957999999987,
+    "realtimeMultiple": 258.22924815596673
+  },
+  "topology": {
+    "sections": 149,
+    "conflictZones": 1158
+  },
+  "maximumMoving": 9,
+  "services": [
+    {
+      "id": 0,
+      "deliveredAt1800": 194,
+      "deliveredAt3600": 342,
+      "calls": 9,
+      "longestCompletedCallGapSeconds": 1028.4500000008863,
+      "secondsSinceLastCall": 594.4500000021626,
+      "emergencyStops": 0
+    },
+    {
+      "id": 1,
+      "deliveredAt1800": 153,
+      "deliveredAt3600": 264,
+      "calls": 7,
+      "longestCompletedCallGapSeconds": 1385.6000000050408,
+      "secondsSinceLastCall": 38.25000000013915,
+      "emergencyStops": 0
+    },
+    {
+      "id": 2,
+      "deliveredAt1800": 196,
+      "deliveredAt3600": 396,
+      "calls": 10,
+      "longestCompletedCallGapSeconds": 1239.950000004511,
+      "secondsSinceLastCall": 74.6000000002714,
+      "emergencyStops": 0
+    },
+    {
+      "id": 3,
+      "deliveredAt1800": 213,
+      "deliveredAt3600": 443,
+      "calls": 11,
+      "longestCompletedCallGapSeconds": 1003.5500000036509,
+      "secondsSinceLastCall": 258.3500000009399,
+      "emergencyStops": 0
+    },
+    {
+      "id": 4,
+      "deliveredAt1800": 144,
+      "deliveredAt3600": 255,
+      "calls": 6,
+      "longestCompletedCallGapSeconds": 1534.9500000028168,
+      "secondsSinceLastCall": 351.300000001278,
+      "emergencyStops": 0
+    },
+    {
+      "id": 5,
+      "deliveredAt1800": 110,
+      "deliveredAt3600": 236,
+      "calls": 6,
+      "longestCompletedCallGapSeconds": 993.3499999990966,
+      "secondsSinceLastCall": 1260.4000000045853,
+      "emergencyStops": 0
+    },
+    {
+      "id": 6,
+      "deliveredAt1800": 173,
+      "deliveredAt3600": 278,
+      "calls": 7,
+      "longestCompletedCallGapSeconds": 1079.5500000014506,
+      "secondsSinceLastCall": 268.1500000009755,
+      "emergencyStops": 0
+    },
+    {
+      "id": 7,
+      "deliveredAt1800": 176,
+      "deliveredAt3600": 389,
+      "calls": 9,
+      "longestCompletedCallGapSeconds": 981.4999999996089,
+      "secondsSinceLastCall": 112.00000000040745,
+      "emergencyStops": 0
+    },
+    {
+      "id": 8,
+      "deliveredAt1800": 169,
+      "deliveredAt3600": 280,
+      "calls": 7,
+      "longestCompletedCallGapSeconds": 1023.3999999990692,
+      "secondsSinceLastCall": 1115.200000004057,
+      "emergencyStops": 0
+    },
+    {
+      "id": 9,
+      "deliveredAt1800": 254,
+      "deliveredAt3600": 462,
+      "calls": 11,
+      "longestCompletedCallGapSeconds": 1064.9999999990744,
+      "secondsSinceLastCall": 168.35000000061245,
+      "emergencyStops": 0
+    },
+    {
+      "id": 10,
+      "deliveredAt1800": 169,
+      "deliveredAt3600": 295,
+      "calls": 7,
+      "longestCompletedCallGapSeconds": 1154.500000002153,
+      "secondsSinceLastCall": 500.8000000018219,
+      "emergencyStops": 0
+    },
+    {
+      "id": 11,
+      "deliveredAt1800": 124,
+      "deliveredAt3600": 420,
+      "calls": 11,
+      "longestCompletedCallGapSeconds": 1451.1999999996412,
+      "secondsSinceLastCall": 16.8500000000613,
+      "emergencyStops": 0
+    }
+  ],
+  "disruption": {
+    "heldTrain": 0,
+    "holdAtSeconds": 180,
+    "holdSeconds": 90,
+    "recoveryWindowSeconds": 1800,
+    "before": [
+      33,
+      71,
+      41,
+      0,
+      0,
+      33,
+      37,
+      41,
+      45,
+      49,
+      33,
+      37
+    ],
+    "after": [
+      194,
+      190,
+      282,
+      295,
+      144,
+      110,
+      173,
+      176,
+      206,
+      298,
+      169,
+      124
+    ],
+    "emergencyStops": 0
+  }
+}

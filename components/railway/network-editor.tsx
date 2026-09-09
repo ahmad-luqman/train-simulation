@@ -28,12 +28,12 @@ import {
   edgeAt,
   nodeAt,
   planService,
-  pointOnEdge,
   snapNode,
   type Construction,
   type Service,
   type Point,
 } from '@/lib/railway/network';
+import { metres, METRES_PER_UNIT } from '@/lib/railway/units';
 import { height, riverX } from '@/lib/railway/terrain';
 import type { Simulation } from '@/lib/railway/simulation';
 import type { RailwayWorld } from '@/lib/railway/world';
@@ -150,13 +150,15 @@ export function NetworkEditor({
   useEffect(() => {
     if (world)
       world.onMapPoint =
-        tab === 'build' && kind !== 'loop' ? choosePoint : undefined;
+        tab === 'build' && !['loop', 'parallel'].includes(kind)
+          ? choosePoint
+          : undefined;
     return () => {
       if (world) world.onMapPoint = undefined;
     };
   }, [world, tab, kind, choosePoint]);
   function clickMap(e: PointerEvent<SVGSVGElement>) {
-    if (tab !== 'build' || kind === 'loop') return;
+    if (tab !== 'build' || ['loop', 'parallel'].includes(kind)) return;
     const svg = e.currentTarget,
       matrix = svg.getScreenCTM();
     if (!matrix) return;
@@ -300,7 +302,7 @@ export function NetworkEditor({
                 }
               />
               <title>
-                {edge.id} · {edge.length.toFixed(1)} m ·{' '}
+                {edge.id} · {metres(edge.length).toFixed(1)} m ·{' '}
                 {(edge.grade * 100).toFixed(1)}% · {money(edge.cost.total)}
               </title>
             </g>
@@ -333,15 +335,12 @@ export function NetworkEditor({
               </text>
             </g>
           ))}
-          {sim.trains.map((t) => {
-            const e = sim.track(t),
-              from = sim.endpoints(t)[0],
-              p = pointOnEdge(
-                e,
-                from === e.a ? t.distance : e.length - t.distance,
-              );
-            return <circle key={t.id} cx={p.x} cy={p.z} r=".9" fill="#fff" />;
-          })}
+          {sim.trains
+            .filter((t) => sim.visible(t))
+            .map((t) => {
+              const p = sim.vehiclePosition(t, 0).p;
+              return <circle key={t.id} cx={p.x} cy={p.z} r=".9" fill="#fff" />;
+            })}
         </svg>
         <p className="editor-hint">
           {overlay === 'gradient'
@@ -358,7 +357,7 @@ export function NetworkEditor({
         <TabsContent value="build">
           <p>
             Choose a start, then click the plan or the valley to draw an
-            endpoint. Nearby endpoints snap within 5 m.
+            endpoint. Nearby endpoints snap within 28 m.
           </p>
           <label htmlFor="railway-editor-field-2">
             Construction
@@ -368,7 +367,7 @@ export function NetworkEditor({
               onChange={(e) => {
                 const next = e.target.value as typeof kind;
                 setKind(next);
-                if (next === 'loop') {
+                if (['loop', 'parallel'].includes(next)) {
                   const p = edgeAt(network, parent) ?? main[0];
                   setParent(p.id);
                   setStart(p.a);
@@ -386,9 +385,12 @@ export function NetworkEditor({
               <NativeSelectOption value="loop">
                 Passing loop preset
               </NativeSelectOption>
+              <NativeSelectOption value="parallel">
+                Second running line
+              </NativeSelectOption>
             </NativeSelect>
           </label>
-          {kind === 'loop' ? (
+          {['loop', 'parallel'].includes(kind) ? (
             <>
               <label htmlFor="railway-editor-field-3">
                 Parent corridor
@@ -410,7 +412,7 @@ export function NetworkEditor({
                 </NativeSelect>
               </label>
               <label htmlFor="railway-editor-field-4">
-                Loop side
+                Track side
                 <NativeSelect
                   id="railway-editor-field-4"
                   value={bend < 0 ? 'left' : 'right'}
@@ -427,8 +429,10 @@ export function NetworkEditor({
                 </NativeSelect>
               </label>
               <p className="editor-hint">
-                Independent track block with protected turnouts at both ends.
-                Wait for trains to clear before purchasing.
+                Separate running line with physical station connections. The
+                second line opens for reverse traffic; change directions in
+                Dispatcher after both lines clear. Track and bridge costs
+                include the added line.
               </p>
             </>
           ) : (
@@ -493,11 +497,14 @@ export function NetworkEditor({
                     <Input
                       id="railway-editor-field-7"
                       type="number"
-                      value={end.x}
-                      min={-86}
-                      max={86}
+                      value={Number(metres(end.x).toFixed(1))}
+                      min={metres(-86)}
+                      max={metres(86)}
                       onChange={(e) =>
-                        setEnd({ ...end, x: Number(e.target.value) })
+                        setEnd({
+                          ...end,
+                          x: Number(e.target.value) / METRES_PER_UNIT,
+                        })
                       }
                     />
                   </label>
@@ -506,11 +513,14 @@ export function NetworkEditor({
                     <Input
                       id="railway-editor-field-8"
                       type="number"
-                      value={end.z}
-                      min={-67}
-                      max={78}
+                      value={Number(metres(end.z).toFixed(1))}
+                      min={metres(-67)}
+                      max={metres(78)}
                       onChange={(e) =>
-                        setEnd({ ...end, z: Number(e.target.value) })
+                        setEnd({
+                          ...end,
+                          z: Number(e.target.value) / METRES_PER_UNIT,
+                        })
                       }
                     />
                   </label>
@@ -520,23 +530,28 @@ export function NetworkEditor({
                       id="railway-editor-field-9"
                       type="number"
                       step=".1"
-                      value={
+                      value={metres(
                         end.elevation ??
-                        Number(
-                          (Math.max(0, height(end.x, end.z)) + 0.36).toFixed(2),
-                        )
-                      }
-                      min={0.36}
-                      max={8}
+                          Number(
+                            (Math.max(0, height(end.x, end.z)) + 0.36).toFixed(
+                              2,
+                            ),
+                          ),
+                      )}
+                      min={metres(0.36)}
+                      max={metres(8)}
                       onChange={(e) =>
-                        setEnd({ ...end, elevation: Number(e.target.value) })
+                        setEnd({
+                          ...end,
+                          elevation: Number(e.target.value) / METRES_PER_UNIT,
+                        })
                       }
                     />
                   </label>
                 </div>
               )}
               <label htmlFor="railway-editor-field-10">
-                Bend: {bend} m
+                Bend: {metres(bend).toFixed(0)} m
                 <Slider
                   id="railway-editor-field-10"
                   aria-label="Track bend"
@@ -568,11 +583,11 @@ export function NetworkEditor({
           )}
           {quote.edge && (
             <p className="editor-metrics">
-              {quote.edge.length.toFixed(1)} m ·{' '}
+              {metres(quote.edge.length).toFixed(1)} m ·{' '}
               {(quote.edge.grade * 100).toFixed(1)}% grade ·{' '}
-              {quote.edge.radius.toFixed(0)} m minimum radius
+              {metres(quote.edge.radius).toFixed(0)} m minimum radius
               {quote.edge.bridgeLength > 0 &&
-                ` · automatic bridge ${quote.edge.bridgeLength.toFixed(1)} m`}
+                ` · automatic bridge ${metres(quote.edge.bridgeLength).toFixed(1)} m`}
             </p>
           )}
           <dl className="construction-cost">
@@ -796,7 +811,7 @@ export function NetworkEditor({
                 Connected round trip ·{' '}
                 {proposal
                   .service!.legs.reduce(
-                    (sum, l) => sum + edgeAt(network, l.edge).length,
+                    (sum, l) => sum + metres(edgeAt(network, l.edge).length),
                     0,
                   )
                   .toFixed(1)}{' '}
@@ -829,6 +844,60 @@ export function NetworkEditor({
           </button>
         </TabsContent>
         <TabsContent value="manage">
+          <h3>Crossovers</h3>
+          <p className="editor-hint">
+            Connect two running lines through a protected diagonal switch. Both
+            lines must clear before construction. Direction rules still apply.
+          </p>
+          {network.edges
+            .filter((e) => e.kind === 'parallel')
+            .map((e) => {
+              const quote = sim.quoteCrossover(e.id);
+              return (
+                <div className="editor-callout" key={e.id}>
+                  <strong>
+                    {nodeAt(network, e.a).name} ↔ {nodeAt(network, e.b).name}
+                  </strong>
+                  <p>
+                    {quote.errors.join(' ') ||
+                      `Track and switches ${money(quote.cost!.track)} · earthworks ${money(quote.cost!.earthworks)} · bridges ${money(quote.cost!.bridges)}`}
+                  </p>
+                  <button
+                    className="button"
+                    disabled={quote.errors.length > 0}
+                    onClick={() =>
+                      action(() => {
+                        sim.buildCrossover(e.id);
+                      }, 'Protected crossover built.')
+                    }
+                  >
+                    Build crossover {quote.cost ? money(quote.cost.total) : ''}
+                  </button>
+                </div>
+              );
+            })}
+
+          {(network.crossovers ?? []).map((c) => (
+            <div className="editor-callout" key={c.id}>
+              <strong>{sim.resourceLabel(`block:${c.main}`)} crossover</strong>
+              <button
+                className="button"
+                disabled={!!sim.crossoverRemovalReason(c.id)}
+                onClick={() =>
+                  action(
+                    () => sim.bulldozeCrossover(c.id),
+                    'Crossover removed; both running lines remain.',
+                  )
+                }
+              >
+                Remove crossover
+              </button>
+              <p>
+                {sim.crossoverRemovalReason(c.id) ??
+                  'Unused crossover work can also be refunded from the construction ledger.'}
+              </p>
+            </div>
+          ))}
           <h3>Stations & platforms</h3>
           <label htmlFor="railway-editor-field-16">
             Endpoint
@@ -930,7 +999,9 @@ export function NetworkEditor({
                     </strong>
                     <span>{money(r.amount)}</span>
                   </div>
-                  {['build', 'station', 'platform'].includes(r.action) &&
+                  {['build', 'station', 'platform', 'crossover'].includes(
+                    r.action,
+                  ) &&
                     !r.reversed && (
                       <>
                         <button

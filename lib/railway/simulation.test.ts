@@ -1,3 +1,6 @@
+import { assertSeparated } from './test-helpers';
+import { vehicles } from './safety';
+import { edgeAt } from './network';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { cities, corridors, locomotives } from './data';
@@ -41,15 +44,13 @@ void test('single-track reservations exclude opposing trains at every substep', 
   sim.speed = 8;
   for (let n = 0; n < 5000; n++) {
     sim.step(0.1);
-    const occupied = new Set<string>();
-    for (const t of sim.trains) {
-      if (t.distance === 0) continue;
-      const [a, b] = sim.endpoints(t),
-        key = edgeKey(a, b);
-      assert.ok(!occupied.has(key), `Two locomotives on ${key}`);
-      occupied.add(key);
-      assert.equal(sim.occupied.get(key), t.id);
-    }
+    assertSeparated(sim);
+    for (const t of sim.trains.filter((t) => sim.visible(t)))
+      for (const vehicle of vehicles(t.cars)) {
+        const edge = sim.vehiclePosition(t, vehicle.offset).edge!;
+        if (edgeAt(sim.network, edge))
+          assert.equal(sim.occupied.get(edge), t.id);
+      }
   }
 });
 void test('pause freezes the clock and trains; held trains retain their block', () => {

@@ -12,7 +12,8 @@
     "lint": "oxlint",
     "format": "oxfmt",
     "test": "tsx --test lib/railway/*.test.ts",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "benchmark:dispatch": "tsx scripts/benchmark-dispatch.ts"
   },
   "dependencies": {
     "@base-ui/react": "1.7.0",

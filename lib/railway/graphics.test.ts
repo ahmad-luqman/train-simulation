@@ -1,3 +1,6 @@
+import { assertModelEnvelope } from './model-envelope';
+import { ENGINE, TENDER, WAGON } from './safety';
+import { locomotive, carriage } from './models';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import { test } from 'node:test';
@@ -30,6 +33,8 @@ void test('shipped Blender assets load through GLTFLoader with rig, anchors, dim
       tender = asset.tenders[i];
     engine.updateMatrixWorld(true);
     tender.updateMatrixWorld(true);
+    assertModelEnvelope(engine, ENGINE);
+    assertModelEnvelope(tender, TENDER);
     const bounds = new THREE.Box3()
       .setFromObject(engine)
       .getSize(new THREE.Vector3());
@@ -108,4 +113,21 @@ void test('night stays lit, daylight is periodic, and riverbanks rise smoothly o
   const river = createRiver();
   assert.ok(river.geometry.attributes.position.count > 1000);
   disposeModel(river);
+});
+
+void test('all procedural vehicle variants and wheel phases fit the shared physical envelopes', () => {
+  for (let id = 0; id < 12; id++) {
+    const model = locomotive('#456f60', id);
+    for (let phase = 0; phase < Math.PI * 2; phase += Math.PI / 8) {
+      for (const wheel of model.userData.wheels as THREE.Object3D[])
+        wheel.rotation.x = phase;
+      assertModelEnvelope(model, ENGINE);
+    }
+    disposeModel(model);
+  }
+  for (let index = 0; index <= 6; index++) {
+    const model = carriage('#456f60', index);
+    assertModelEnvelope(model, index === 0 ? TENDER : WAGON);
+    disposeModel(model);
+  }
 });

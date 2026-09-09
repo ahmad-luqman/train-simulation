@@ -1,3 +1,5 @@
+import { assertModelEnvelope } from './model-envelope';
+import { ENGINE, TENDER } from './safety';
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 
@@ -67,6 +69,8 @@ export async function loadShowcase(loader = new GLTFLoader()) {
           !engine.children.some((o) => o.name.startsWith('smoke_emitter')))
       )
         throw new Error('Invalid showcase asset contract');
+      assertModelEnvelope(engine, ENGINE);
+      assertModelEnvelope(tender, TENDER);
       engines.push(rigModel(engine));
       tenders.push(rigModel(tender));
     }

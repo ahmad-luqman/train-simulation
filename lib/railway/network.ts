@@ -1,6 +1,7 @@
 import type { DispatchSettings } from './dispatch';
 import { cities, corridors } from './data';
 import { height, riverX } from './terrain';
+import { chooseYard } from './topology';
 
 export const edgeKey = (a: number, b: number) =>
   [a, b].sort((x, y) => x - y).join('-');
@@ -12,6 +13,8 @@ export type Station = {
   name: string;
   platforms: string[];
   built: boolean;
+  yardAngle?: number;
+  yardLead?: number;
 };
 export type Cost = {
   track: number;
@@ -29,14 +32,23 @@ export type TrackEdge = {
   grade: number;
   radius: number;
   bridgeLength: number;
-  kind: 'track' | 'siding' | 'loop';
+  kind: 'track' | 'siding' | 'loop' | 'parallel';
+  side?: -1 | 1;
   block: string; // Legacy parent corridor ID, retained for loop construction dependencies.
   direction?: 'both' | 'a-to-b' | 'b-to-a';
   built: boolean;
   used: boolean;
   cost: Cost;
 };
+export type Crossover = {
+  id: string;
+  main: string;
+  parallel: string;
+  position: number;
+  cost: Cost;
+};
 export type RailNetwork = {
+  crossovers?: Crossover[];
   nodes: NetworkNode[];
   edges: TrackEdge[];
   stations: Station[];
@@ -85,7 +97,7 @@ export function snapNode(
     )[0];
 }
 
-// Sampled cubic curves are the single geometry contract, in world metres.
+// Sampled cubic curves are the single geometry contract, in scene units (see units.ts).
 export function curvePoints(a: Point, b: Point, bend: number): Point[] {
   const length = Math.hypot(b.x - a.x, b.z - a.z);
   const nx = -(b.z - a.z) / (length || 1),
@@ -221,10 +233,12 @@ export function legacyCurvePoints(a: Point, b: Point): Point[] {
     return { x: value('x'), y: value('y'), z: value('z') };
   });
 }
+let baselineYards: { yardAngle: number; yardLead: number }[] | undefined;
 export function createNetwork(): RailNetwork {
   const nodes = cities.map((c, id) => ({ ...c, id, y: 0.36 }));
-  return {
+  const network: RailNetwork = {
     nodes,
+    crossovers: [],
     edges: corridors.map(([a, b]) => {
       const points = legacyCurvePoints(nodes[a], nodes[b]),
         metrics = measure(points);
@@ -245,13 +259,27 @@ export function createNetwork(): RailNetwork {
       id: `station-${n.id}`,
       node: n.id,
       name: n.name,
-      platforms: [`platform-${n.id}`],
+      platforms: [
+        `platform-${n.id}`,
+        `platform-${8 + n.id}`,
+        `platform-${16 + n.id}`,
+      ],
       built: false,
     })),
     nextNode: 8,
     nextEdge: 1,
-    nextPlatform: 8,
+    nextPlatform: 24,
   };
+  for (const station of network.stations)
+    Object.assign(
+      station,
+      baselineYards?.[station.node] ?? chooseYard(network, station.node),
+    );
+  baselineYards ??= network.stations.map((s) => ({
+    yardAngle: s.yardAngle!,
+    yardLead: s.yardLead!,
+  }));
+  return network;
 }
 // Houses that exist beside the original railway are protected; vegetation and
 // fields can be cleared. Match the town kit grid and its original track setback.
@@ -288,12 +316,12 @@ export function quoteConstruction(
   const start = nodeAt(network, input.start);
   if (
     !start ||
-    !['track', 'siding', 'loop'].includes(input.kind) ||
+    !['track', 'siding', 'loop', 'parallel'].includes(input.kind) ||
     !Number.isFinite(input.bend) ||
     Math.abs(input.bend) > 60
   )
     return {
-      errors: ['Choose a valid start and a bend between −60 and 60 m.'],
+      errors: ['Choose a valid start and a bend between −333 and 333 m.'],
       cost,
     };
   let end: NetworkNode | undefined, node: NetworkNode | undefined;
@@ -318,12 +346,12 @@ export function quoteConstruction(
   }
   if (!end || end.id === start.id)
     return {
-      errors: ['Choose a different endpoint; endpoints snap within 5 m.'],
+      errors: ['Choose a different endpoint; endpoints snap within 28 m.'],
       cost,
     };
   const parent = input.parent ? edgeAt(network, input.parent) : undefined;
   if (
-    input.kind === 'loop' &&
+    (input.kind === 'loop' || input.kind === 'parallel') &&
     (!parent ||
       parent.kind !== 'track' ||
       ![parent.a, parent.b].includes(start.id) ||
@@ -336,12 +364,13 @@ export function quoteConstruction(
       cost,
     };
   if (
-    input.kind === 'loop' &&
-    network.edges.some((e) => e.kind === 'loop' && e.block === parent!.block)
+    (input.kind === 'loop' || input.kind === 'parallel') &&
+    network.edges.some((e) => e.kind === input.kind && e.block === parent!.id)
   )
-    errors.push('This corridor already has a passing loop.');
+    errors.push('This corridor already has that parallel-track preset.');
   if (
     input.kind !== 'loop' &&
+    input.kind !== 'parallel' &&
     network.edges.some(
       (e) =>
         (e.a === start.id && e.b === end.id) ||
@@ -354,19 +383,28 @@ export function quoteConstruction(
   if (input.kind === 'siding' && !node)
     errors.push('A siding must end at a new buffer stop.');
   // A loop shares the main track direction, with a fixed outward offset.
-  const a = input.kind === 'loop' ? nodeAt(network, parent!.a) : start,
-    b = input.kind === 'loop' ? nodeAt(network, parent!.b) : end;
-  const points = curvePoints(
-      a,
-      b,
-      input.kind === 'loop' ? (input.bend < 0 ? -12 : 12) : input.bend,
-    ),
+  const a =
+      input.kind === 'loop' || input.kind === 'parallel'
+        ? nodeAt(network, parent!.a)
+        : start,
+    b =
+      input.kind === 'loop' || input.kind === 'parallel'
+        ? nodeAt(network, parent!.b)
+        : end;
+  const points =
+      input.kind === 'parallel'
+        ? parallelPoints(parent!, input.bend < 0 ? -1 : 1)
+        : curvePoints(
+            a,
+            b,
+            input.kind === 'loop' ? (input.bend < 0 ? -12 : 12) : input.bend,
+          ),
     metrics = measure(points);
   if (metrics.length < 16 || metrics.length > 180)
-    errors.push('Track length must be between 16 and 180 m.');
+    errors.push('Track length must be between 89 and 1,000 m.');
   if (metrics.radius < 10)
     errors.push(
-      'Curve radius is below 10 m. Reduce the bend or lengthen the track.',
+      'Curve radius is below 56 m. Reduce the bend or lengthen the track.',
     );
   if (metrics.grade > 0.04)
     errors.push(
@@ -383,7 +421,7 @@ export function quoteConstruction(
         Math.abs(p.y - 0.36 - height(p.x, p.z)) > 2.5,
     )
   )
-    errors.push('Earthworks exceed 2.5 m. Choose flatter ground.');
+    errors.push('Earthworks exceed 14 m. Choose flatter ground.');
   // Reject running along the river; an automatic bridge must cross both banks.
   if (
     metrics.bridgeLength > 0 &&
@@ -393,7 +431,7 @@ export function quoteConstruction(
       metrics.bridgeLength > 32)
   )
     errors.push(
-      'Bridges must cross between dry banks with a span of at most 32 m.',
+      'Bridges must cross between dry banks with a span of at most 178 m.',
     );
   const interior = points.filter(
     (p) => distance(p, a) > 10 && distance(p, b) > 10,
@@ -411,7 +449,11 @@ export function quoteConstruction(
   )
     errors.push('The alignment crosses town buildings. Bend around the town.');
   for (const existing of network.edges) {
-    if (input.kind === 'loop' && existing.block === parent!.block) continue;
+    if (
+      (input.kind === 'loop' || input.kind === 'parallel') &&
+      existing.block === parent!.block
+    )
+      continue;
     const shared = [existing.a, existing.b]
       .filter((id) => id === a.id || id === b.id)
       .map((id) => nodeAt(network, id));
@@ -434,7 +476,8 @@ export function quoteConstruction(
       break;
     }
   }
-  cost.track = Math.ceil(metrics.length * 220);
+  cost.track =
+    Math.ceil(metrics.length * 220) + (input.kind === 'parallel' ? 5000 : 0);
   cost.earthworks = Math.ceil(Math.max(0, metrics.earthworks - 1e-8) * 90);
   cost.bridges = Math.ceil(metrics.bridgeLength * 1100);
   const name = input.stationName?.trim();
@@ -466,13 +509,35 @@ export function quoteConstruction(
       points,
       ...metrics,
       kind: input.kind,
+      ...(input.kind === 'parallel'
+        ? {
+            side: input.bend < 0 ? (-1 as const) : (1 as const),
+            direction: 'b-to-a' as const,
+          }
+        : {}),
       block:
-        input.kind === 'loop' ? parent!.block : `track-${network.nextEdge}`,
+        input.kind === 'loop' || input.kind === 'parallel'
+          ? parent!.block
+          : `track-${network.nextEdge}`,
       built: true,
       used: false,
       cost,
     },
   };
+}
+// Offset the complete sampled alignment, including its endpoint ports. The
+// new line is physical capacity; station movements connect its separate ports.
+export function parallelPoints(parent: TrackEdge, side: -1 | 1): Point[] {
+  return parent.points.map((p, i) => {
+    const a = parent.points[Math.max(0, i - 1)],
+      b = parent.points[Math.min(parent.points.length - 1, i + 1)];
+    const d = Math.hypot(b.x - a.x, b.z - a.z) || 1;
+    return {
+      x: p.x - ((b.z - a.z) / d) * 8 * side,
+      y: p.y,
+      z: p.z + ((b.x - a.x) / d) * 8 * side,
+    };
+  });
 }
 export type RouteLeg = {
   edge: string;
@@ -488,6 +553,7 @@ export type Service = {
   dwell: number;
   legs: RouteLeg[];
   dispatch?: DispatchSettings;
+  preferred?: string[];
 };
 export function shortestPath(
   network: RailNetwork,
@@ -577,5 +643,6 @@ export function planService(
     stops: [...stops],
     dwell,
     legs,
+    ...(preferred.length ? { preferred: [...preferred] } : {}),
   };
 }

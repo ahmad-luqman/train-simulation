@@ -1,6 +1,6 @@
 # Phase 3 — Movement and dispatch
 
-**Status correction, 10 September 2026:** This is an initial implementation, not completed anti-collision dispatch. The [collision and routing audit](PHASE_3_COLLISION_AUDIT.md) reproduces overlapping initial trains, a physical main/loop chassis collision despite unique reservations, acceptance of the collision save, and permanent default-fleet congestion. The previous all-fleet progress test was weakened to isolated services. Complete [corrective Phase 3A](ADVANCED_GAME_ROADMAP.md#phase-3a--collision-safety-and-automatic-routing-corrective-milestone), including physical parallel tracks and junction routing, before Phase 4.
+**Historical implementation notes for `b1c2d05`.** The audit findings and behavior below describe the original Phase 3 implementation. [Phase 3A](PHASE_3A_SAFETY.md) now supplies physical station/turnout geometry, independent collision checks, automatic feasible routing, preserved service intent and v4 save validation. Its automated safety and sustained-fleet checks pass; browser acceptance and the Phase 0 GPU baseline remain open. Consult the Phase 3A notes for current behavior.
 
 ## Implementation plan
 

@@ -1,4 +1,7 @@
+import { newPhysicalMotion, type PhysicalMotion } from './traffic';
 import { locomotives } from './data';
+import { METRES_PER_UNIT } from './units';
+export { METRES_PER_UNIT } from './units';
 import {
   edgeAt,
   pointOnEdge,
@@ -8,7 +11,6 @@ import {
 } from './network';
 
 // One scene unit represents 5.555... metres; the original 2.5 units/s is 50 km/h.
-export const METRES_PER_UNIT = 50 / 9;
 export const TICK = 0.05;
 export const BRAKE = 0.85;
 export const TURNOUT_CLEARANCE = 2;
@@ -23,12 +25,16 @@ export type WaitReason = {
     | 'departure'
     | 'headway'
     | 'direction'
-    | 'hold';
+    | 'hold'
+    | 'depot'
+    | 'capacity'
+    | 'collision';
   message: string;
   owner?: number;
   resource?: string;
 };
 export type Motion = {
+  physical: PhysicalMotion;
   velocity: number;
   history: PathSection[];
   reversed: boolean;
@@ -60,6 +66,7 @@ export type DispatchState = {
   overrides: number[];
 };
 export const newMotion = (): Motion => ({
+  physical: newPhysicalMotion(),
   velocity: 0,
   history: [],
   reversed: false,
@@ -149,27 +156,43 @@ export function pathPosition(
   return { p, angle: Math.atan2(-tangent.x, -tangent.z), edge: edge.id };
 }
 export function circularWaits(
-  waits: { id: number; owner?: number }[],
+  waits: { id: number; owner?: number; owners?: number[] }[],
 ): number[][] {
-  const next = new Map(
-    waits.filter((w) => w.owner !== undefined).map((w) => [w.id, w.owner!]),
+  const graph = new Map(
+    waits.map((w) => [
+      w.id,
+      w.owners ?? (w.owner === undefined ? [] : [w.owner]),
+    ]),
   );
-  const cycles: number[][] = [],
-    seen = new Set<string>();
-  for (const start of next.keys()) {
-    const path: number[] = [];
-    let at: number | undefined = start;
-    while (at !== undefined && !path.includes(at)) {
-      path.push(at);
-      at = next.get(at);
+  let serial = 0;
+  const indices = new Map<number, number>(),
+    low = new Map<number, number>(),
+    stack: number[] = [],
+    onStack = new Set<number>(),
+    cycles: number[][] = [];
+  const visit = (id: number) => {
+    indices.set(id, serial);
+    low.set(id, serial++);
+    stack.push(id);
+    onStack.add(id);
+    for (const other of graph.get(id) ?? []) {
+      if (!indices.has(other)) {
+        visit(other);
+        low.set(id, Math.min(low.get(id)!, low.get(other)!));
+      } else if (onStack.has(other))
+        low.set(id, Math.min(low.get(id)!, indices.get(other)!));
     }
-    if (at === undefined) continue;
-    const cycle = path.slice(path.indexOf(at));
-    const key = [...cycle].sort((a, b) => a - b).join(',');
-    if (!seen.has(key)) {
-      seen.add(key);
-      cycles.push(cycle);
+    if (low.get(id) === indices.get(id)) {
+      const component: number[] = [];
+      let other: number;
+      do {
+        other = stack.pop()!;
+        onStack.delete(other);
+        component.push(other);
+      } while (other !== id);
+      if (component.length > 1) cycles.push(component.sort((a, b) => a - b));
     }
-  }
-  return cycles;
+  };
+  for (const id of graph.keys()) if (!indices.has(id)) visit(id);
+  return cycles.sort((a, b) => a[0] - b[0]);
 }

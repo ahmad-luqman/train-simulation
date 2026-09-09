@@ -16,6 +16,7 @@ import {
   speedKmh,
   type DispatchSettings,
 } from '@/lib/railway/dispatch';
+import { sample } from '@/lib/railway/topology';
 import type { Simulation } from '@/lib/railway/simulation';
 
 export function Dispatcher({
@@ -35,6 +36,8 @@ export function Dispatcher({
     structuredClone(sim.settings(selected)),
   );
   const [feedback, setFeedback] = useState('');
+  const [showSafety, setShowSafety] = useState(false);
+  const [selectedLine, setSelectedLine] = useState('');
   const snapshot = sim.dispatcherSnapshot(),
     train = sim.trains[selected],
     edge = sim.track(train);
@@ -89,54 +92,242 @@ export function Dispatcher({
       </div>
       <p className="editor-hint">
         Automatic dispatch favors passenger services; waiting trains gain
-        priority. “Dispatch next” moves a train to the front of the queue when
-        its route is safe.
+        priority. Each departure reserves a reachable platform. Requests retry
+        together once per second so older requests compete fairly.{' '}
+        {snapshot.queued} trains await protected depot admission.
       </p>
       {snapshot.cycles.map((cycle) => (
         <div className="editor-warning" key={cycle.join('-')}>
           <strong>Circular wait</strong>
           <p>{cycle.map((id) => locomotives[id].name).join(' → ')}</p>
           <p>
-            Release a held train, choose a free parallel track before departure,
-            or turn a stopped train back to clear the junction. Additional
-            platforms can relieve a platform queue.
+            Release a held train or add a physical platform at the blocked
+            destination. Automatic routing checks alternate paths before
+            departure; occupied movements remain protected.
           </p>
         </div>
       ))}
-      <h3>Live blocks</h3>
+      <h3>Running lines & station approaches</h3>
+      <label>
+        Inspect track{' '}
+        <NativeSelect
+          value={selectedLine}
+          onChange={(e) => setSelectedLine(e.target.value)}
+        >
+          <NativeSelectOption value="">
+            Selected train’s route
+          </NativeSelectOption>
+          {sim.network.edges.map((e) => (
+            <NativeSelectOption key={e.id} value={e.id}>
+              {sim.resourceLabel(`block:${e.id}`)} · {e.id}
+            </NativeSelectOption>
+          ))}
+        </NativeSelect>
+      </label>
       <svg
         className="dispatch-map"
-        viewBox="-100 -100 200 200"
-        aria-label="Track block occupancy: orange occupied, green clear"
+        viewBox="-145 -145 290 290"
+        aria-label="Physical running lines, station approaches and reserved route"
       >
-        {sim.network.edges.map((e) => (
-          <polyline
-            key={e.id}
-            points={e.points.map((p) => `${p.x},${p.z}`).join(' ')}
-            fill="none"
-            stroke={sim.occupied.has(e.id) ? '#b15c22' : '#397758'}
-            strokeWidth={e.id === edge.id ? 2 : 1}
+        <defs>
+          <marker
+            id="dispatch-arrow"
+            viewBox="0 0 10 10"
+            refX="5"
+            refY="5"
+            markerWidth="4"
+            markerHeight="4"
+            orient="auto-start-reverse"
           >
-            <title>
-              {e.id}:{' '}
-              {sim.occupied.has(e.id)
-                ? locomotives[sim.occupied.get(e.id)!].name
-                : 'Clear'}
-            </title>
-          </polyline>
-        ))}
+            <path d="M 0 0 L 10 5 L 0 10 z" fill="currentColor" />
+          </marker>
+        </defs>
+        {[...sim.topology.sections.values()].map((section) => {
+          const reserved = snapshot.reservations.some(
+            (r) =>
+              r.resource === `section:${section.id}` ||
+              (section.edge && r.resource === `block:${section.edge}`),
+          );
+          const chosen = train.motion.physical.route?.sections.some(
+            (s) => s.section === section.id,
+          );
+          const line = sim.network.edges.find((e) => e.id === section.edge);
+          const mid = sample(section, section.length * 0.5),
+            next = sample(section, section.length * 0.5 + 1);
+          return (
+            <g key={section.id}>
+              <polyline
+                points={section.points.map((p) => `${p.x},${p.z}`).join(' ')}
+                fill="none"
+                stroke={chosen ? '#7752a0' : reserved ? '#b15c22' : '#397758'}
+                strokeWidth={line?.id === selectedLine ? 2 : chosen ? 1.4 : 0.6}
+                strokeDasharray={line?.kind === 'parallel' ? '3 1' : undefined}
+              >
+                <title>
+                  {section.platform
+                    ? sim.resourceLabel(`platform:${section.platform}`)
+                    : section.edge
+                      ? sim.resourceLabel(`block:${section.edge}`)
+                      : section.kind === 'crossover'
+                        ? 'Controlled crossover'
+                        : 'Station turnout'}{' '}
+                  · {reserved ? 'Reserved' : 'Clear'}
+                </title>
+              </polyline>
+              {line && line.direction && line.direction !== 'both' && (
+                <line
+                  x1={mid.p.x}
+                  y1={mid.p.z}
+                  x2={next.p.x}
+                  y2={next.p.z}
+                  stroke="#273c30"
+                  markerEnd={
+                    line.direction === 'a-to-b'
+                      ? 'url(#dispatch-arrow)'
+                      : undefined
+                  }
+                  markerStart={
+                    line.direction === 'b-to-a'
+                      ? 'url(#dispatch-arrow)'
+                      : undefined
+                  }
+                />
+              )}
+            </g>
+          );
+        })}
         {sim.network.nodes.map((n) => (
-          <circle key={n.id} cx={n.x} cy={n.z} r="2" fill="#273c30">
-            <title>{n.name}</title>
-          </circle>
+          <g key={n.id}>
+            <circle cx={n.x} cy={n.z} r="1.7" fill="#273c30" />
+            <text x={n.x + 2} y={n.z - 2} fontSize="3.5">
+              {n.name}
+            </text>
+          </g>
         ))}
+        {sim.trains
+          .filter((t) => sim.visible(t))
+          .map((t) => {
+            const p = sim.vehiclePosition(t, 0).p;
+            return (
+              <circle
+                key={t.id}
+                cx={p.x}
+                cy={p.z}
+                r="1.5"
+                fill={t.id === selected ? '#7752a0' : '#273c30'}
+              >
+                <title>{locomotives[t.id].name}</title>
+              </circle>
+            );
+          })}
+        {train.motion.physical.route &&
+          (() => {
+            const p = sim.topology.pose(
+              train.motion.physical.route!.sections,
+              train.motion.physical.stopTarget,
+            ).p;
+            return (
+              <circle cx={p.x} cy={p.z} r="2.3" stroke="#b15c22" fill="none">
+                <title>Protected stopping target</title>
+              </circle>
+            );
+          })()}
+        {showSafety &&
+          snapshot.zones.flatMap((zone) =>
+            zone.sections.map((id, index) => {
+              const section = sim.topology.sections.get(id)!;
+              const interval = zone.intervals[index];
+              if (
+                !train.motion.physical.route?.sections.some(
+                  (part) => part.section === id,
+                )
+              )
+                return null;
+              const points = Array.from(
+                {
+                  length: Math.max(
+                    2,
+                    Math.ceil(interval.end - interval.start) + 1,
+                  ),
+                },
+                (_, i) => i,
+              );
+              return (
+                <polyline
+                  key={`${zone.id}:${id}`}
+                  points={points
+                    .map((_, i) => {
+                      const p = sample(
+                        section,
+                        interval.start +
+                          ((interval.end - interval.start) * i) /
+                            (points.length - 1),
+                      ).p;
+                      return `${p.x},${p.z}`;
+                    })
+                    .join(' ')}
+                  fill="none"
+                  stroke="#b52235"
+                  strokeWidth="1.5"
+                  opacity=".25"
+                />
+              );
+            }),
+          )}
+        {showSafety &&
+          snapshot.physical.map((e) => (
+            <rect
+              key={`${e.train}:${e.vehicle}`}
+              x={e.p.x - e.halfWidth - e.margin}
+              y={e.p.z - e.halfLength - e.margin}
+              width={2 * (e.halfWidth + e.margin)}
+              height={2 * (e.halfLength + e.margin)}
+              transform={`rotate(${(-e.angle * 180) / Math.PI} ${e.p.x} ${e.p.z})`}
+              fill="none"
+              stroke="#b52235"
+              strokeWidth=".25"
+            />
+          ))}
       </svg>
+      <p className="editor-hint">
+        Solid: main line · dashed: second line · purple: selected route · ring:
+        stopping target. Each platform has its own approach and full-length
+        berth.
+      </p>
+      <label htmlFor="dispatch-safety">
+        <Input
+          id="dispatch-safety"
+          type="checkbox"
+          checked={showSafety}
+          onChange={(e) => setShowSafety(e.target.checked)}
+        />{' '}
+        Show vehicle clearance envelopes
+      </label>
+      <p>
+        {train.motion.physical.decision ??
+          (train.motion.physical.queued
+            ? 'Awaiting a clear depot entry.'
+            : 'Waiting at a physical platform.')}
+      </p>
+      {train.motion.physical.route && (
+        <p>
+          Braking target:{' '}
+          {(
+            (train.motion.physical.stopTarget - train.motion.physical.at) *
+            METRES_PER_UNIT
+          ).toFixed(1)}{' '}
+          m ahead ·{' '}
+          {sim.resourceLabel(
+            `platform:${train.motion.physical.route.destination}`,
+          )}
+        </p>
+      )}
       <details>
         <summary>Occupancy ledger ({snapshot.reservations.length})</summary>
         <ul className="dispatch-ledger">
           {snapshot.reservations.map((r) => (
             <li key={r.resource}>
-              <span>{r.resource}</span>
+              <span>{sim.resourceLabel(r.resource)}</span>
               <button onClick={() => select(r.owner)}>
                 {locomotives[r.owner].name}
               </button>
@@ -157,7 +348,11 @@ export function Dispatcher({
             <button onClick={() => select(wait.id)}>
               {locomotives[wait.id].name}
             </button>
-            <span>{wait.message}</span>
+            <span>
+              {wait.message}
+              {wait.owners.length > 0 &&
+                ` Waiting for: ${wait.owners.map((id) => locomotives[id].name).join(', ')}`}
+            </span>
             <small>{Math.floor(wait.seconds)} s waiting</small>
           </li>
         ))}
@@ -237,13 +432,28 @@ export function Dispatcher({
           Use parallel track {e.id}
         </button>
       ))}
+      {(sim.network.crossovers ?? []).map((c) => (
+        <button
+          className="button editor-full"
+          key={c.id}
+          disabled={train.motion.started}
+          onClick={() =>
+            act(
+              () => sim.useCrossover(selected, c.id),
+              'Crossover requested for the next safe departure.',
+            )
+          }
+        >
+          Request crossover · {sim.resourceLabel(`block:${c.main}`)}
+        </button>
+      ))}
       <button
         className="button editor-full"
         disabled={!sim.canTurnBack(selected)}
         onClick={() =>
           act(
             () => sim.turnBack(selected),
-            'Train reversing toward the previous station. Its service is now a recovery shuttle.',
+            'Train returning to its previous platform. Its original service is retained.',
           )
         }
       >

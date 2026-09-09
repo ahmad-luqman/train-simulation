@@ -1,4 +1,5 @@
 'use client';
+import { consistLength } from '@/lib/railway/dispatch';
 /* eslint-disable next/no-img-element -- Images are generated locally from Three.js models as data URLs. */
 /* eslint-disable react/react-compiler -- The compiler lint pass crashes on the imperative Three.js simulation store; this component opts out with use no memo. */
 import { useCallback, useEffect, useRef, useState } from 'react';
@@ -48,7 +49,8 @@ import type { RailwayWorld, CameraMode } from '@/lib/railway/world';
 import { makePortraits } from '@/lib/railway/portraits';
 import type { AudioMix } from '@/lib/railway/audio';
 import { registerRailwayTools } from '@/lib/railway/webmcp';
-const SAVE_KEY = 'steam-atlas-save-v3';
+const SAVE_KEY = 'steam-atlas-save-v4';
+const PHASE_3_SAVE_KEY = 'steam-atlas-save-v3';
 const PREVIOUS_SAVE_KEY = 'steam-atlas-save-v2';
 const LEGACY_SAVE_KEY = 'steam-atlas-save-v1';
 export default function Game() {
@@ -195,6 +197,7 @@ export default function Game() {
     try {
       const data =
         localStorage.getItem(SAVE_KEY) ??
+        localStorage.getItem(PHASE_3_SAVE_KEY) ??
         localStorage.getItem(PREVIOUS_SAVE_KEY) ??
         localStorage.getItem(LEGACY_SAVE_KEY);
       if (!data) {
@@ -253,7 +256,16 @@ export default function Game() {
   const active = sim.current.trains.filter((t) => !t.held).length;
   const progress = Math.min(
     100,
-    (train.distance / sim.current.track(train).length) * 100,
+    train.motion.physical.route
+      ? (100 *
+          Math.max(
+            0,
+            train.motion.physical.at - 3 - consistLength(train.cars),
+          )) /
+          (sim.current.topology.length(train.motion.physical.route.sections) -
+            6 -
+            consistLength(train.cars))
+      : 0,
   );
   void tick;
   return (
@@ -884,7 +896,13 @@ export default function Game() {
             <div className="section-label">
               <h3>Scheduled route</h3>
               <span className={running ? 'running-text' : ''}>
-                {paused ? 'Paused' : train.held ? 'On hold' : train.status}
+                {paused
+                  ? 'Paused'
+                  : train.motion.physical.queued
+                    ? 'In depot queue'
+                    : train.held
+                      ? 'On hold'
+                      : train.status}
               </span>
             </div>
             <div className="route-stops">

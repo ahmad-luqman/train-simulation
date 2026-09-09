@@ -1,3 +1,6 @@
+import { assertSeparated, until, sameSave } from './test-helpers';
+import { vehicles } from './safety';
+import { consistLength } from './dispatch';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import * as THREE from 'three';
@@ -166,8 +169,8 @@ void test('a new service follows the exact purchased edge, dwells, earns, and re
   const restored = new Simulation();
   restored.restore(s.save());
   assert.deepEqual(restored.save(), s.save());
-  advance(s, 100);
-  advance(restored, 100);
+  advance(s, 300);
+  advance(restored, 300);
   assert.ok(s.trains[2].delivered > 0);
   assert.deepEqual(restored.save(), s.save());
   assert.throws(() => s.bulldoze(id), /train|service/);
@@ -189,7 +192,7 @@ void test('services reject disconnected destinations and moving reassignment, th
   );
   assert.deepEqual(moving.save(), before);
   moving.stopForEditing(0);
-  advance(moving, 60);
+  until(moving, () => moving.trains[0].held);
   assert.equal(moving.trains[0].held, true);
   assert.equal(moving.trains[0].distance, 0);
   const at = moving.endpoints(moving.trains[0])[0];
@@ -259,13 +262,11 @@ void test('a passing loop can be built during live operation and uses its own ph
   let traversed = false;
   for (let i = 0; i < 2000; i++) {
     s.step(0.05);
-    const occupied = new Set<string>();
-    for (const t of s.trains)
-      if (t.distance > 0) {
-        const e = s.track(t);
-        assert.ok(!occupied.has(e.id));
-        occupied.add(e.id);
-        assert.equal(s.occupied.get(e.id), t.id);
+    assertSeparated(s);
+    for (const t of s.trains.filter((t) => s.visible(t)))
+      for (const v of vehicles(t.cars)) {
+        const edge = s.vehiclePosition(t, v.offset).edge;
+        if (edgeAt(s.network, edge!)) assert.equal(s.occupied.get(edge!), t.id);
       }
     if (s.track(s.trains[chosen]).id === id && s.trains[chosen].distance > 0)
       traversed = true;
@@ -293,7 +294,7 @@ void test('station/platform undo respects dependencies, counts, funds and stable
   assert.notEqual(id, again);
   assert.notEqual(edgeAt(s.network, again).b, node);
 });
-void test('version 1 saves migrate without modifying input, and unsupported/corrupt version 2 saves fail atomically', () => {
+void test('legacy positions remain untouched on rejected migration, and corrupt current saves fail atomically', () => {
   const original = new Simulation();
   advance(original, 41);
   const current = original.save();
@@ -306,12 +307,8 @@ void test('version 1 saves migrate without modifying input, and unsupported/corr
   };
   const copy = structuredClone(v1),
     restored = new Simulation();
-  restored.restore(v1);
+  assert.throws(() => restored.restore(v1), /legacy.*physical/);
   assert.deepEqual(v1, copy);
-  assert.deepEqual(
-    restored.trains.map(({ motion: _motion, ...t }) => t),
-    original.trains.map(({ motion: _motion, ...t }) => t),
-  );
   const { s } = buildExtension();
   const before = s.save();
   const mutations: ((value: SaveState) => void)[] = [
@@ -350,26 +347,26 @@ void test('scheduled stops remain ordered when a path transits through another l
   restored.restore(s.save());
   assert.deepEqual(restored.services[0], service);
 });
-void test('the final wagon protects the previous track after the locomotive enters a new leg', () => {
+void test('the final wagon protects purchased track while the head enters its platform approach', () => {
   const { s, id, station } = buildExtension();
+  s.trains.forEach((t) => (t.held = t.id !== 2));
   s.stopForEditing(2);
   s.assignService(
-    planService(s.network, 2, 'Tail clearance', [3, station.id, 0], 3),
+    planService(s.network, 2, 'Tail clearance', [3, station.id], 3, [id]),
   );
   const t = s.trains[2];
   t.cars = 6;
-  // Place the locomotive 20 m into its onward leg: the last wagon still trails
-  // 3.3 m back onto the purchased approach. Both must be protected from work.
-  const next = s.services[2].legs.findIndex(
-    (l, i) => i > 0 && s.services[2].legs[i - 1].edge === id && l.edge !== id,
-  );
-  assert.ok(next >= 0);
-  t.leg = next;
-  t.distance = 20;
-  const previous = s.services[2].legs[next - 1];
-  t.motion.history = [
-    { ...previous, length: edgeAt(s.network, previous.edge).length },
-  ];
+  t.held = false;
+  until(s, () => t.motion.started);
+  const interval = s.topology
+    .intervals(t.motion.physical.route!.sections)
+    .find((i) => i.resource === `block:${id}`)!;
+  until(s, () => t.motion.physical.at > interval.end + 1);
+  assert.ok(t.motion.physical.at < interval.end + consistLength(6));
   assert.ok(s.protectedEdges().has(id));
   assert.match(s.removalReason(id)!, /trailing consist/);
+  assertSeparated(s);
+  const r = new Simulation();
+  r.restore(s.save());
+  sameSave(s, r);
 });

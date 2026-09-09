@@ -1,3 +1,5 @@
+import { vehicles } from './safety';
+import { sample } from './topology';
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { cities, locomotives } from './data';
@@ -77,7 +79,8 @@ export class RailwayWorld {
   private selectionRing: THREE.Mesh;
   private water: THREE.Mesh;
   private sunlight: THREE.DirectionalLight;
-  private signalLights: { key: string; mesh: THREE.Mesh }[] = [];
+  private signalLights: { key: string; reverse: boolean; mesh: THREE.Mesh }[] =
+    [];
   constructor(
     public host: HTMLDivElement,
     sim: Simulation,
@@ -153,6 +156,7 @@ export class RailwayWorld {
       );
       batchScenery(g, moving);
       this.scene.add(g);
+      g.visible = this.sim.visible(this.sim.trains[i]);
       this.trains.push(g);
       this.cars.push([]);
       this.syncCars(i);
@@ -221,7 +225,7 @@ export class RailwayWorld {
     return c;
   }
   private terrain() {
-    const geo = new THREE.PlaneGeometry(190, 180, 140, 140);
+    const geo = new THREE.PlaneGeometry(290, 290, 180, 180);
     geo.rotateX(-Math.PI / 2);
     const pos = geo.attributes.position;
     const colors = [];
@@ -352,20 +356,16 @@ export class RailwayWorld {
           position: new THREE.Vector3(node.x, node.y + 5, node.z - 3),
         });
       }
-      station.platforms
-        .slice(1)
-        .forEach((_, i) =>
-          box(
-            this.railGroup,
-            '#c4b99b',
-            node.x,
-            node.y - 0.1,
-            node.z - 3 - i * 2,
-            12,
-            0.5,
-            1.5,
-          ),
-        );
+      for (const platform of station.platforms) {
+        const path = this.sim.topology.sections.get(platform)!;
+        const pose = sample(path, path.length / 2),
+          g = new THREE.Group();
+        g.position.set(pose.p.x, pose.p.y, pose.p.z);
+        g.rotation.y = pose.angle;
+        box(g, '#c4b99b', 3, -0.1, 0, 1.5, 0.5, path.length);
+        box(g, '#b66745', 0, 0.5, -path.length / 2 - 1, 2, 0.3, 0.3);
+        this.railGroup.add(g);
+      }
     }
     for (const edge of this.sim.network.edges.filter(
       (e) => e.kind === 'siding',
@@ -469,7 +469,7 @@ export class RailwayWorld {
   private railways() {
     const ties: { p: THREE.Vector3; angle: number }[] = [];
     const bridges: { p: THREE.Vector3; angle: number }[] = [];
-    for (const edge of this.sim.network.edges) {
+    for (const edge of this.sim.topology.asEdges()) {
       const curve = new TrackCurve(edge),
         key = edge.id,
         length = edge.length;
@@ -536,7 +536,7 @@ export class RailwayWorld {
         );
         lamp.position.set(p.x, p.y + 2.3, p.z);
         this.railGroup.add(lamp);
-        this.signalLights.push({ key: edge.id, mesh: lamp });
+        this.signalLights.push({ key: edge.id, reverse: t > 0.5, mesh: lamp });
       }
     }
     const inst = new THREE.InstancedMesh(
@@ -558,8 +558,8 @@ export class RailwayWorld {
       const g = new THREE.Group();
       g.position.copy(p);
       g.rotation.y = angle;
-      box(g, '#746d58', 0, -0.23, 0, 2.7, 0.35, 1);
-      for (const x of [-1.35, 1.35]) {
+      box(g, '#746d58', 0, -0.23, 0, 3.6, 0.35, 1);
+      for (const x of [-1.8, 1.8]) {
         box(g, '#495e54', x, 0.65, 0, 0.11, 0.11, 1.05);
         if (i % 2 === 0) {
           box(g, '#495e54', x, 0.3, 0, 0.12, 0.8, 0.12);
@@ -710,6 +710,7 @@ export class RailwayWorld {
       const c = carriage(locomotives[id].color, this.cars[id].length);
       c.userData.trainId = id;
       batchScenery(c, new Set());
+      c.visible = this.sim.visible(this.sim.trains[id]);
       this.scene.add(c);
       this.cars[id].push(c);
     }
@@ -772,8 +773,16 @@ export class RailwayWorld {
     engine.userData.rods = this.showcase.engines[level].userData.rods;
     tender.userData.wheels = this.showcase.tenders[level].userData.wheels;
   }
+  private highlightedPath = '';
   private updateRouteHighlight() {
-    if (this.highlighted === this.selected) return;
+    const active = this.sim.trains[this.selected].motion.physical.route;
+    const signature = active?.sections.map((s) => s.section).join() ?? '';
+    if (
+      this.highlighted === this.selected &&
+      signature === this.highlightedPath
+    )
+      return;
+    this.highlightedPath = signature;
     this.highlighted = this.selected;
     for (const child of this.routeHighlight.children) disposeModel(child);
     this.routeHighlight.clear();
@@ -785,8 +794,16 @@ export class RailwayWorld {
       opacity: 0.32,
       depthWrite: false,
     });
-    route.forEach((leg) => {
-      const curve = this.curves.get(leg.edge);
+    const paths =
+      !this.previewService && active
+        ? active.sections.map((s) => s.section)
+        : route.flatMap(
+            (l) =>
+              this.sim.topology.running.get(l.edge)?.map((s) => s.section) ??
+              [],
+          );
+    paths.forEach((id) => {
+      const curve = this.curves.get(id);
       if (!curve) return;
       const line = new THREE.Mesh(
         new THREE.TubeGeometry(
@@ -825,6 +842,8 @@ export class RailwayWorld {
     water.uniforms.fogColor.value.copy((this.scene.fog as THREE.Fog).color);
     this.sim.trains.forEach((train, i) => {
       this.syncCars(i);
+      this.trains[i].visible = this.sim.visible(train);
+      this.cars[i].forEach((car) => (car.visible = this.sim.visible(train)));
       const { p, angle } = this.positionOnRoute(i, train.distance);
       const engine = this.trains[i];
       engine.position.copy(p);
@@ -839,7 +858,10 @@ export class RailwayWorld {
         rod.position.z = rod.userData.baseZ + Math.cos(phase) * 0.12;
       }
       this.cars[i].forEach((car, j) => {
-        const at = this.positionOnRoute(i, train.distance - 3.8 - j * 3);
+        const at = this.positionOnRoute(
+          i,
+          train.distance - vehicles(train.cars)[j + 1].offset,
+        );
         car.position.copy(at.p);
         car.rotation.set(0, at.angle, 0);
         if (running) {
@@ -872,7 +894,8 @@ export class RailwayWorld {
     this.effects.update(motionDelta);
     const target = this.trains[this.selected].position;
     this.selectionRing.position.set(target.x, 0.55, target.z);
-    this.selectionRing.visible = !this.photoMode;
+    this.selectionRing.visible =
+      !this.photoMode && this.sim.visible(this.sim.trains[this.selected]);
     this.routeHighlight.visible = !this.photoMode;
     this.updateRouteHighlight();
     if (this.trackside) {
@@ -906,7 +929,9 @@ export class RailwayWorld {
     this.updateShowcase();
     for (const signal of this.signalLights)
       (signal.mesh.material as THREE.MeshBasicMaterial).color.set(
-        this.sim.occupied.has(signal.key) ? '#ff725a' : '#9be987',
+        this.sim.traffic.signal(signal.key, signal.reverse)
+          ? '#9be987'
+          : '#ff725a',
       );
     this.audio.update(
       this.camera,
