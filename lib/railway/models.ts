@@ -6,6 +6,17 @@ export function material(color: string) {
   return mats.get(color)!;
 }
 const boxGeo = new THREE.BoxGeometry(1, 1, 1);
+// Shared triangular extrusion keeps every gable centered above its house.
+const roofProfile = new THREE.Shape();
+roofProfile.moveTo(-1.4, 0);
+roofProfile.lineTo(1.4, 0);
+roofProfile.lineTo(0, 1.15);
+roofProfile.closePath();
+const roofGeo = new THREE.ExtrudeGeometry(roofProfile, {
+  depth: 3.05,
+  bevelEnabled: false,
+});
+roofGeo.translate(0, 0, -1.525);
 export function box(
   parent: THREE.Object3D,
   color: string,
@@ -119,12 +130,8 @@ export function house(
   g.rotation.y = rotation;
   g.scale.setScalar(scale);
   box(g, color, 0, 1.25, 0, 2.4, 2.5, 2.8);
-  const roof = new THREE.Mesh(
-    new THREE.CylinderGeometry(1.94, 1.94, 3.05, 3),
-    material('#825747'),
-  );
-  roof.rotation.set(Math.PI / 2, Math.PI / 2, 0);
-  roof.position.y = 2.63;
+  const roof = new THREE.Mesh(roofGeo, material('#825747'));
+  roof.position.y = 2.5;
   roof.castShadow = true;
   g.add(roof);
   box(g, '#604b3b', 0, 0.58, 1.41, 0.48, 1.15, 0.025);
