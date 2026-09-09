@@ -1,8 +1,8 @@
 # Steam Atlas advanced game development roadmap
 
-**Purpose:** Turn the current railway sandbox into a visually rich management game with meaningful construction, dispatch, economic, and fleet decisions.  
-**Baseline:** Current repository at `315b7fb`, reviewed 9 September 2026.  
-**Status:** Phased development plan. Phase 1 implementation is recorded in [the graphics implementation notes](PHASE_1_GRAPHICS.md); its browser acceptance checks and Phase 0 performance baseline remain open. Phase 2 construction and service editing are implemented in [the construction notes](PHASE_2_CONSTRUCTION.md), including their shared-network, fixed-tick and save-migration prerequisites. Phase 3 movement and dispatch are implemented in [the dispatch notes](PHASE_3_DISPATCH.md). Browser acceptance and measured performance remain open; Phases 4–7 remain planned.
+**Purpose:** Turn the current railway sandbox into a visually rich management game with meaningful construction, dispatch, economic, and fleet decisions.
+**Baseline:** Current repository at `315b7fb`, reviewed 9 September 2026.
+**Status:** Phased development plan. Phase 1 implementation is recorded in [the graphics implementation notes](PHASE_1_GRAPHICS.md); its browser acceptance checks and Phase 0 performance baseline remain open. Phase 2 construction and service editing are implemented in [the construction notes](PHASE_2_CONSTRUCTION.md), including their shared-network, fixed-tick and save-migration prerequisites. Phase 3 movement and dispatch have an initial implementation, but physical collision safety and full-fleet routing acceptance **failed audit at `b1c2d05`**. See [the collision and routing audit](PHASE_3_COLLISION_AUDIT.md) and the corrected [dispatch notes](PHASE_3_DISPATCH.md). **Phase 3A is the next required milestone and blocks Phase 4 implementation.** Browser acceptance and measured performance remain open; Phases 4–7 remain planned.
 
 ## Recommended direction
 
@@ -25,11 +25,11 @@ The project already has twelve selectable locomotives, eight towns, thirteen cur
 The original baseline had these limitations; Phase 2 resolves network ownership and editable-network persistence as noted below:
 
 - **Network ownership — resolved in Phase 2:** Shared sampled geometry owns track lengths and prices; services store exact edge itineraries, including parallel tracks.
-- **Movement and dispatch — implemented in Phase 3:** Actual speed follows traction, mass, grade, curve limits and braking. Independent track blocks, shared turnouts and platforms retain full-consist protection. Timetables, priority arbitration, route history, terminal reversal and circular-wait diagnostics/recovery are implemented. Platforms remain logical resources and endpoint turnouts remain conservative shared movement areas.
+- **Movement and dispatch — Phase 3 incomplete:** Actual speed, route history, timetable controls and resource reservations are implemented. Physical collision detection, geometry-based interlocking and automatic safe routing are missing. The audit reproduces overlapping initial locomotives and a main/loop chassis collision despite unique reservations. The default fleet stalls with five trains never delivering. Logical platform IDs do not provide physical separation. Resolve these defects in Phase 3A before adding the economy.
 - **Economy:** Cargo loads are generated rather than taken from inventories. Deliveries create revenue without recurring fuel, maintenance, staff, or infrastructure costs.
 - **Fleet:** Locomotives share the same underlying model design with different liveries. Wagon purchases change a count rather than a cargo-specific consist.
 - **Presentation:** Terrain, buildings, water, and smoke are simple procedural geometry. Graphics presets mainly change resolution and shadows.
-- **Persistence and verification — extended in Phase 3:** Version 3 saves persist edited networks, stations, services, construction accounting, motion, actual paths, schedules and reservations; versions 1/2 migrate atomically. The locomotive roster remains fixed. Browser interaction and performance measurements still need to be established.
+- **Persistence and verification — extended in Phase 3:** Version 3 saves persist edited networks, stations, services, construction accounting, motion, actual paths, schedules and reservations; versions 1/2 migrate atomically. Restore currently accepts physically overlapping trains because validation does not check inter-train geometry. Phase 3A must extend validation and define migration for incompatible positions. The locomotive roster remains fixed. Browser interaction and performance measurements still need to be established.
 
 ## Phase overview
 
@@ -41,13 +41,14 @@ Effort is relative complexity, not a calendar commitment. Select test hardware a
 | 1     | A much better looking and sounding valley               | High                 | 0                           | Large  |
 | 2     | Player-built track and configurable services            | High                 | 0                           | Large  |
 | 3     | Believable train movement and useful dispatch decisions | High                 | 2                           | Large  |
-| 4     | Supply chains, contracts, and a real operating economy  | High                 | 2 and 3                     | Large  |
+| 3A    | Physical collision safety and automatic safe routing    | Required; next       | Initial Phase 3             | Large  |
+| 4     | Supply chains, contracts, and a real operating economy  | High; gated          | 2 and accepted 3A           | Large  |
 | 5     | Distinct locomotives, maintenance, and depot logistics  | Medium               | 3 and 4                     | Large  |
 | 6     | Campaign progression and a world that responds          | Medium               | 1, 4, and 5                 | Large  |
 | 7     | Performance, usability, balancing, and release quality  | Required for release | All chosen release features | Large  |
 
-**Milestone A — Scenic railway:** Phases 0 and 1.  
-**Milestone B — Playable railway tycoon:** Phases 2, 3, and 4.  
+**Milestone A — Scenic railway:** Phases 0 and 1.
+**Milestone B — Playable railway tycoon:** Phases 2, 3 including corrective Phase 3A, and 4.
 **Milestone C — Advanced railway game:** Phases 5, 6, and 7.
 
 Some art production can proceed while systems are built once asset and network interfaces are stable. Integrate features in dependency order; every intermediate version must remain playable.
@@ -137,7 +138,7 @@ Export game assets as glTF/GLB and verify materials and animation in the actual 
 
 ## Phase 3 — Make dispatching and movement matter
 
-**Implementation:** Movement, full-consist dispatch, timetable controls, platform queues and physical recovery are implemented. See [implementation and verification notes](PHASE_3_DISPATCH.md). Automated acceptance scenarios pass; browser interaction and measured GPU performance remain open. The next playable milestone is Phase 4’s transport economy.
+**Status: partial; safety and routing acceptance reopened.** Movement, timetable controls, logical reservations and manual recovery have an initial implementation. The [audit](PHASE_3_COLLISION_AUDIT.md) confirms collisions and a stalled default fleet despite passing tests. The [implementation notes](PHASE_3_DISPATCH.md) record what exists; they do not certify anti-collision behavior. Complete corrective Phase 3A before Phase 4.
 
 **Player benefit:** Congestion has understandable causes, and infrastructure or scheduling changes produce visible improvements.
 
@@ -153,14 +154,110 @@ Export game assets as glTF/GLB and verify materials and animation in the actual 
 
 ### Done when
 
-- Opposing trains use a passing loop safely, and a junction remains protected while a long consist crosses it.
-- Faster trains brake before restrictive signals and do not overshoot at 8× speed.
+- Opposing trains use a passing loop safely, and a junction remains protected while a long consist crosses it. **Reopened:** assert physical clearance of every locomotive, tender and wagon; resource uniqueness alone does not satisfy this criterion.
+- Faster trains brake before restrictive signals and do not overshoot at 8× speed. **Reopened:** the complete vehicle envelope must remain outside the conflicting movement, including during the interval between ticks.
 - A blocked platform explains its queue; the player can identify and resolve a bottleneck.
 - Test scenarios cover long trains, opposing movements, terminal reversal, held trains, circular waits, and save/load during a reservation.
 
 **Boundary:** Favor understandable railway rules over a complete signalling simulator. Defer derailments and detailed cab controls.
 
+## Phase 3A — Collision safety and automatic routing (corrective milestone)
+
+**Priority:** Required before Phase 4. **Status:** Planned; no corrective runtime work is claimed by the audit update.
+**Evidence:** [Collision and routing audit of `b1c2d05`](PHASE_3_COLLISION_AUDIT.md).
+**Player benefit:** Trains never occupy the same physical space, and feasible services progress without repeated manual rescue.
+
+Treat three requirements separately: **collision detection** checks physical occupancy and proposed movement; **collision avoidance** reserves a safe movement and brakes before conflicts; **routing reliability** ensures the dispatcher can make progress or explain why capacity is infeasible. None is a substitute for the others.
+
+### 3A.1 — Restore failing evidence and define physical occupancy
+
+- Preserve the initial-overlap, main/loop collision and accepted-collision-save reproductions before changing behavior. Restore the original simultaneous twelve-service progress scenario alongside the isolated engine tests; do not replace it with weaker assertions.
+- Define a pure simulation contract for the locomotive, tender and every wagon: coupling positions, width/height/length, forward/rear overhang and safety margin. Express motion and construction distances explicitly so conversion cannot hide a clearance error.
+- Validate every procedural and GLB detail level against these envelopes. Keep render objects out of authoritative state; both collision and drawing adapters consume the same physical pose contract.
+- Represent standing occupancy as intervals on travelled track plus spatial envelopes at curves and shared geometry. Derive rear clearance from the entire consist, including reversed operation and articulation at junctions.
+
+**Exit evidence:** fixtures fail for the current defects, every rendered vehicle has a checked envelope, and occupancy includes held trains and station dwell.
+
+### 3A.2 — Physical parallel tracks, junction topology and station movements
+
+- Replace implicit all-to-all routing through a shared town/endpoint node with explicit track endpoints and permitted turnout movements. Connect station platforms and depots through real approach/departure paths. A route consists of connected physical track sections and valid transitions, not just a list of towns or a different edge ID.
+- Add double-track corridor construction: two separated track centre-lines with their own geometry, directions, blocks and occupancy. Offer a consistent left/right traffic convention with a clear preview. Preserve bidirectional single track and passing loops; parallel tracks need not share one corridor-wide lock.
+- Add controlled turnout and crossover presets: branch entry/exit, entry/exit for a passing loop, and a crossover between parallel running lines. Explicitly represent facing/trailing connections and allowed movements. Route through a crossover only when a physical connection exists; never jump lanes at a common logical node.
+- Lock turnout state for each granted movement until its complete consist clears; reject switch changes underneath trains and reserve a crossover as one complete manoeuvre.
+- At a junction, reserve conflicting movements rather than blanket-locking every separate track. Build a movement conflict table from swept geometry and fouling points. Allow simultaneous trains on disjoint parallel tracks; lock crossovers, converging paths and same-level diamond crossings until the full rear clears. Vertical separation must be checked geometrically.
+- Make track spacing, curve radius, turnout lead length and platform length valid for the complete fleet envelope. Curves and bridge widths must preserve separation throughout, not only at endpoints. Recheck physical conflicts in construction previews, commits and demolition.
+- Price both running lines, turnout/crossover work, earthworks, station connections and bridge capacity explicitly. Building a second line must create usable physical capacity that appears in the renderer, route planner and ledger.
+- Preserve stable station/service identities when introducing ports or splitting tracks at controlled turnouts. Map existing route sections to the new topology in a versioned migration; reject edits under a train and update route/reservation references transactionally. Broader freeform mid-track editing can remain deferred.
+- Give each initial train a non-overlapping berth and protected approach. If using an off-network depot queue, represent it explicitly in state and UI and admit vehicles through a checked entry; do not draw several staged engines at the same coordinate or teleport an active consist to make room.
+- Give platform berths and their approach/departure movements physical geometry or conservative disjoint occupancy regions that match rendering. A platform purchase must add usable safe capacity, not merely another resource identifier.
+- Derive fouling points and conflict zones from adjacent tracks, turnout geometry, vehicle overhang and clearance. Include loop ends and unconnected same-level crossings; distinguish bridges with adequate vertical clearance.
+- Keep the original single-block-per-edge rule until physical clearances pass. Do not enable closer headways or more parallel movement solely because identifiers differ.
+
+**Exit evidence:** zero initial intersections; two trains travel simultaneously on separate parallel lines without a false shared-corridor lock; a lane change follows an actual crossover; occupied station and loop throats block conflicting movements; a second track or valid platform demonstrably increases safe capacity.
+
+### 3A.3 — Add independent collision detection and safe movement commit
+
+- Build a broad-phase spatial index, then check oriented envelopes/capsules for the actual locomotive, tender and wagons. Define permitted coupling contact within a consist separately from collisions between trains.
+- Check the complete proposed movement between fixed ticks, including rotation, overhang, reversing and route transitions. Use conservative swept bounds or bounded adaptive subdivision with a documented maximum displacement/rotation; endpoint-only tests cannot certify absence of tunnelling.
+- Calculate signal stop positions from the frontmost physical extent and the conflicting movement envelope. Include braking distance and integration margin. A logical `At signal` state is not sufficient if the model projects into the junction.
+- Commit movement only after safety checks pass. Unexpected violations retain the last valid pose and occupied reservations and report the blocker; normal operation must use advance braking, not repeated emergency freezes.
+- Apply the same checks to entry from a depot, service changes, turn-back, wagon additions, construction and save restoration. Do not repair overlap with visual offsets, repulsion, hidden active trains or deleted reservations.
+
+**Exit evidence:** the reproduced loop collision fails before the fix and passes afterward; all vehicle pairs stay separated at 1×, 3× and 8×, including sub-tick sweeps and commanded changes.
+
+### 3A.4 — Reserve feasible routes and prevent avoidable deadlocks
+
+- Separate ordered service stops from the operational itinerary. Search only direction-compatible paths with enough length, platform capacity and clearance for the complete consist; account for occupied and committed future movements.
+- Plan to a safe holding point with sufficient stopping/standing room and a viable exit. Atomically acquire the required blocks, turnout movements and platform/overlap protection before leaving the previous safe boundary. Keep occupied resources distinct from cancellable future reservations.
+- Route over a specific running line, turnout/crossover movement and station platform approach, obeying direction and connection rules. Same-direction and opposing traffic must select an appropriate separate line when available; a physically absent crossover is never an available route.
+- Evaluate passing-loop and alternate-path options before entering a conflict. Preserve ordered calls and user constraints; explain and display automatic changes. Use bounded replanning and deterministic tie-breaking to avoid route oscillation.
+- Use all blocking dependencies, not only the single displayed reason, for circular-wait analysis. Check that a proposed grant does not close an avoidable resource cycle. Test the prevention policy for false deadlocks; conservative locking must not stop a feasible railway indefinitely.
+- Add fairness and bounded aging without allowing priority overrides to bypass safety. Schedule automatic recovery only when its path and clearance are feasible; preserve the original service intent after recovery.
+- If no feasible route exists, wait outside the conflict and explain the needed capacity or player action. Do not promise perpetual progress on an impossible network; do require it for the shipped default timetable and a declared feasible benchmark.
+
+**Exit evidence:** default concurrent fleet progress restored; opposing services use a loop automatically; controlled disruptions recover with fleet-wide throughput, not just one extra delivery by a rescue shuttle.
+
+### 3A.5 — Persistence and dispatcher diagnosis
+
+- Persist physical berth/queue state, operational route and future grants where necessary; rebuild derived geometry/indexes deterministically. Version the schema if these records change the save contract.
+- Validate the complete detached candidate for physical intersection, ownership and stopping/clearance consistency before restoring. Include the audit's currently accepted collision state as a rejection fixture. Define explicit atomic failure or a reviewable migration for old incompatible positions; never silently relocate trains.
+- Give each running line direction-specific signals that reflect the granted route and downstream clearance, not merely whether an edge has any owner. A green aspect must agree with movement authority and physical stopping limits.
+- Add a track/junction plan view with separate line selection, direction arrows, named platform approaches, turnout state and the proposed/reserved path through each junction. Distinguish the two lines without relying only on color.
+- Show reserved routes, physical occupancy, conflict zones, braking targets, all relevant blockers and automatic reroute/recovery decisions. Distinguish a train awaiting admission, one stopped at a signal, and an infeasible service.
+- Keep debug collision envelopes optional; the ordinary player needs a clear waiting reason and a useful action rather than internal resource identifiers alone.
+
+**Exit evidence:** uninterrupted and restored runs match; corrupt/overlapping saves cannot partially mutate the live game; displayed blocks and braking targets agree with physical behavior.
+
+### 3A.6 — Acceptance and regression gate
+
+| Scenario                                          | Required assertion                                                                                                                                                                                                                               |
+| ------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Fresh railway, reset and migrated save            | Every visible vehicle has valid, non-overlapping occupancy from the first frame; admission does not jump an active train.                                                                                                                        |
+| Same-track opposing and following services        | No head-on or rear-end overlap; correct front/rear margins; priority never bypasses protection.                                                                                                                                                  |
+| Separate parallel running lines                   | Opposing and same-direction trains can use distinct clear lines simultaneously; no false corridor-wide lock and no physical overlap through curves.                                                                                              |
+| Crossover and branch junction                     | Lane changes use a valid physical connection. Conflicting switch movements are mutually exclusive until rear clearance; unrelated parallel movements continue.                                                                                   |
+| Main and purchased passing loop                   | Test opposing and same-direction arrivals, shared exit throats, held trains, reversals and simultaneous platform demand. Assert physical separation of every vehicle.                                                                            |
+| Station/platform bottleneck                       | Each assignment maps to the correct physical berth and approach; no platform or lane teleport. Held and dwelling consists retain their complete occupancy. A valid additional platform improves safe throughput without overlapping model paths. |
+| Junction, curve and crossing                      | Long wagons and locomotive overhang stay outside occupied movements; unconnected same-level crossings conflict; vertically separated track only conflicts where clearance requires it.                                                           |
+| Fast approach at 1×/3×/8×                         | Braking begins before the physical limit; no overlap during a tick, even when render frame rate varies.                                                                                                                                          |
+| Service edit, reversal, turn-back, wagon purchase | All vehicles preserve valid poses and coupling/clearance; commands reject atomically if unsafe. Include the last wagon and showcase dimensions.                                                                                                  |
+| Default twelve-service fleet                      | All twelve operate concurrently under automatic dispatch for 1,800 simulated seconds. Every service delivers and continues progressing; no permanent circular wait or hidden serialization by holding eleven trains.                             |
+| Feasible congestion/disruption                    | Alternate route or loop chosen automatically; no route oscillation or starvation; fleet throughput resumes within a documented scenario bound.                                                                                                   |
+| Infeasible route/capacity                         | Train waits safely outside the conflict with a specific cause and achievable remedy.                                                                                                                                                             |
+| Save/load at each critical boundary               | Physical occupancy, reservations, service intent and positions match uninterrupted operation; the two audited overlapping states fail safe.                                                                                                      |
+
+- Run physical invariants independently of reservation ownership, using every rendered vehicle. Include deterministic stress fixtures and command sequences; preserve a failing seed/reproduction when a defect is found.
+- Run regression tests, typecheck, lint and production build for the corrective milestone. Record an independent review of the safety assumptions and test coverage.
+- Record browser interaction and visual evidence for initial placement, the reproduced loop approach, a busy junction, terminal reversal and a small-screen dispatcher. Run this when browser testing is explicitly authorized by the active environment; keep acceptance open if it has not been performed.
+- Measure collision/interlocking cost and full scene performance on the Phase 0 hardware profile before increasing train count. A stalled railway is not a valid throughput or performance benchmark.
+
+**Completion rule:** Close C1–C4, N1, R1–R3, P1 and T1 from the audit with evidence. Phase 3 is not complete because reservations are unique, one train delivered, or all existing tests pass. Only then proceed to Phase 4.
+
+**Boundary:** This correction does not require derailments, impact physics, a rigid-body physics engine or detailed cab controls. Correct spatial protection, understandable interlocking and feasible automatic routing are required now. Advanced depot maintenance remains in Phase 5; basic safe staging cannot be deferred there.
+
 ## Phase 4 — Add a real transport economy
+
+**Entry gate:** Phase 3A collision safety and automatic-routing acceptance must pass first. Economy design can continue, but runtime economy expansion must not mask or inherit an unresolved stalled/colliding railway.
 
 **Player benefit:** Routes exist to solve demand, and profits reflect service quality and operating choices.
 
@@ -266,35 +363,33 @@ Prefer readable gameplay over visual effects when a budget is exceeded. Do not e
 
 Keep the existing Three.js, React, and TypeScript stack. Extend it in modules rather than rewriting the whole application.
 
-| Area             | Proposed responsibility                                     | Main records                                      |
-| ---------------- | ----------------------------------------------------------- | ------------------------------------------------- |
-| Network          | Shared geometry, connectivity, construction validation      | Node, TrackEdge, Station, Platform, Turnout       |
-| Simulation clock | Fixed ticks, deterministic randomness, commands             | Clock, Seed, Command                              |
-| Dispatch         | Reservations, movement permissions, route planning          | Block, Reservation, Service, Schedule             |
-| Fleet            | Locomotive performance, wagon composition, servicing        | Locomotive, Wagon, Consist, Depot                 |
-| Economy          | Inventories, production, demand, contracts, accounting      | Industry, Inventory, Cargo, Contract, LedgerEntry |
-| Rendering        | Scene objects, asset loading, effects, camera interpolation | Asset manifest, scene handles, quality preset     |
-| Persistence      | Save versions, migration, validation, recovery              | Save metadata, snapshot, migration fixtures       |
-| Interface        | Construction, route editor, inspector, dispatcher, finance  | Selected entity, tool mode, presentation state    |
+| Area             | Proposed responsibility                                        | Main records                                                                |
+| ---------------- | -------------------------------------------------------------- | --------------------------------------------------------------------------- |
+| Network          | Physical track geometry, connectivity, construction validation | TrackEndpoint, TrackEdge, Station, PlatformPath, TurnoutMovement, Crossover |
+| Simulation clock | Fixed ticks, deterministic randomness, commands                | Clock, Seed, Command                                                        |
+| Dispatch         | Safe route admission, movement permissions, automatic routing  | Block, Movement, Reservation, Service, Schedule                             |
+| Physical safety  | Standing/swept occupancy, clearance and collision checks       | VehicleEnvelope, OccupancyInterval, ConflictZone, Berth                     |
+| Fleet            | Locomotive performance, wagon composition, servicing           | Locomotive, Wagon, Consist, Depot                                           |
+| Economy          | Inventories, production, demand, contracts, accounting         | Industry, Inventory, Cargo, Contract, LedgerEntry                           |
+| Rendering        | Scene objects, asset loading, effects, camera interpolation    | Asset manifest, scene handles, quality preset                               |
+| Persistence      | Save versions, migration, validation, recovery                 | Save metadata, snapshot, migration fixtures                                 |
+| Interface        | Construction, route editor, inspector, dispatcher, finance     | Selected entity, tool mode, presentation state                              |
 
 Move existing functionality gradually from `lib/railway/simulation.ts`, `lib/railway/world.ts`, and `components/railway/game.tsx` as each phase needs a boundary. Avoid a large refactor that produces no playable improvement. Renderer objects must not be serialized into saves or become authoritative for prices, route lengths, or reservations.
 
-## First implementation backlog
+## Next implementation backlog
 
-Use these as small, independently reviewable commits for the next development pass.
+The original foundation/graphics backlog is historical; completed portions are recorded in the Phase 1 and Phase 2 notes. The next pass must address the audit in this order, with complete behavior slices and relevant failing-then-passing tests:
 
-1. Record the baseline scenarios, current console issues, and performance measurements.
-2. Extract shared network geometry and stable identifiers; verify that simulation and rendered route lengths match.
-3. Introduce fixed ticks, command validation, and deterministic tests without changing the current player controls.
-4. Add save migration tests and a safe restore path for the current version 1 saves.
-5. Split terrain, railway, train, and effect rendering out of `world.ts` while preserving behavior.
-6. Pool smoke effects and verify resource cleanup across repeated resets.
-7. Build the first improved terrain, riverbank, and lighting scene.
-8. Create and integrate one Blender showcase locomotive with a procedural fallback.
-9. Add train audio, label decluttering, and smooth camera transitions.
-10. Review Milestone A against the baseline captures, then begin construction and service editing.
+1. Preserve C1/C2/P1 reproductions and restore concurrent-fleet regression coverage (3A.1).
+2. Define and validate all vehicle envelopes; build explicit parallel running lines, turnout/crossover connections, physical platform approaches and safe initial staging (3A.1–3A.2).
+3. Add swept physical collision checks and geometry-derived braking/clearance boundaries (3A.3).
+4. Add atomic route admission, alternate routes/loops and cycle prevention without starving feasible services (3A.4).
+5. Integrate bounded automatic recovery, safe player overrides, save migration and clear dispatcher feedback (3A.4–3A.5).
+6. Pass the complete safety/progress matrix, obtain the pending browser evidence, and record performance (3A.6).
+7. Close Phase 3/3A acceptance, then implement the first Phase 4 supply chain and operating ledger.
 
-Do not start every phase at once. The first delivery should prove that the game can look substantially better while staying stable and fast enough to operate.
+Do not expand the fleet, economy or map while the current trains can intersect or the default timetable permanently stalls. Keep the remaining Phase 0/1 browser and performance baseline visible alongside this corrective work.
 
 ## Features to defer
 
@@ -311,7 +406,8 @@ These can become later expansions. The core release should first make building, 
 
 - Keep incremental commits, following the existing repository workflow. Commit complete behavior slices with relevant tests, not partially wired controls.
 - Keep this roadmap updated with phase status, finished items, newly discovered constraints, and the next playable milestone.
-- A feature is complete when its player action works, its failure cases are understandable, its state survives save/load, and its graphics remain within the chosen budget.
+- A feature is complete when its player action works, its failure cases are understandable, its state survives save/load, and its graphics remain within the chosen budget. For dispatch, physical safety and concurrent-fleet progress are separate mandatory checks.
+- Preserve regression strength: do not replace an all-fleet progress test with isolated trains or replace collision assertions with ownership assertions. Any acceptance change requires explicit reasoning and evidence in the roadmap, not merely a green test run.
 - Run focused simulation and integration tests for changed rules, plus typecheck, lint, and production build for each milestone.
 - Require browser interaction and visual checks before calling a graphics milestone complete. Compilation alone is insufficient.
 - Revisit scope after each milestone using actual performance and playtesting results. Add content only when the existing systems make that content meaningful.

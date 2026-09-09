@@ -79,6 +79,8 @@ The generated Shadcn/Base UI catalog is retained and composed by the app. Its ex
 
 ## Validation
 
+**Known dispatch defects:** The [Phase 3 audit](docs/PHASE_3_COLLISION_AUDIT.md) confirms overlapping initial trains, a main/loop collision despite unique reservations, and a permanently stalled default fleet. Physical collision safety, separate track/platform geometry, and automatic routing remain incomplete; corrective Phase 3A is the next required milestone. Existing passing tests do not certify anti-collision behavior.
+
 Tests exercise connected routes, long-running progress for every locomotive, exclusive full-consist reservations, braking at 8×, mass and grade effects, pause/hold, capacity purchases, geometry compatibility, transactional construction/undo, bridge validation, opposing trains on a purchased passing loop, ordered calls, schedules, priorities, platform queues, in-place terminal reversal, circular-wait recovery, versions 1/2 migration and invalid-save atomicity. The app can be compiled and checked without a GPU. Visual rendering and browser interactions still require a WebGL 2-capable browser with hardware acceleration.
 
 Optional WebMCP tools (`get_railway_state`, `follow_train`, `set_train_hold`) are registered only when `document.modelContext` is available. No supported browser validation context was available during this implementation, so these experimental integrations have not been verified end to end. Unsupported browsers run the normal interface unchanged.
