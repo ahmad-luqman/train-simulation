@@ -427,7 +427,7 @@ export function NetworkEditor({
                 </NativeSelect>
               </label>
               <p className="editor-hint">
-                Fixed turnout shape. Shares the parent corridor reservation.
+                Independent track block with protected turnouts at both ends.
                 Wait for trains to clear before purchasing.
               </p>
             </>

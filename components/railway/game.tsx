@@ -39,6 +39,8 @@ import {
   NativeSelectOption,
 } from '@/components/ui/native-select';
 import { locomotives, money } from '@/lib/railway/data';
+import { Dispatcher } from './dispatcher';
+import { speedKmh } from '@/lib/railway/dispatch';
 import { NetworkEditor } from './network-editor';
 import { nodeAt } from '@/lib/railway/network';
 import { Simulation } from '@/lib/railway/simulation';
@@ -46,7 +48,8 @@ import type { RailwayWorld, CameraMode } from '@/lib/railway/world';
 import { makePortraits } from '@/lib/railway/portraits';
 import type { AudioMix } from '@/lib/railway/audio';
 import { registerRailwayTools } from '@/lib/railway/webmcp';
-const SAVE_KEY = 'steam-atlas-save-v2';
+const SAVE_KEY = 'steam-atlas-save-v3';
+const PREVIOUS_SAVE_KEY = 'steam-atlas-save-v2';
 const LEGACY_SAVE_KEY = 'steam-atlas-save-v1';
 export default function Game() {
   'use no memo'; // The mutable simulation is sampled by a render timer, outside React Compiler ownership.
@@ -76,7 +79,8 @@ export default function Game() {
     [rosterOpen, setRosterOpen] = useState(false),
     [detailsOpen, setDetailsOpen] = useState(false),
     [quality, setQuality] = useState('balanced'),
-    [editorOpen, setEditorOpen] = useState(false);
+    [editorOpen, setEditorOpen] = useState(false),
+    [dispatcherOpen, setDispatcherOpen] = useState(false);
   useEffect(() => {
     let active = true;
     let instance: RailwayWorld | undefined;
@@ -190,13 +194,16 @@ export default function Game() {
   function load() {
     try {
       const data =
-        localStorage.getItem(SAVE_KEY) ?? localStorage.getItem(LEGACY_SAVE_KEY);
+        localStorage.getItem(SAVE_KEY) ??
+        localStorage.getItem(PREVIOUS_SAVE_KEY) ??
+        localStorage.getItem(LEGACY_SAVE_KEY);
       if (!data) {
         setNotice('No local save yet. Use Save to keep your railway.');
         return;
       }
       sim.current.restore(JSON.parse(data));
       setEditorOpen(false);
+      setDispatcherOpen(false);
       setTick((t) => t + 1);
       setNotice('Your railway has been restored.');
     } catch {
@@ -441,9 +448,22 @@ export default function Game() {
               <button
                 className="map-button"
                 aria-expanded={editorOpen}
-                onClick={() => setEditorOpen(!editorOpen)}
+                onClick={() => {
+                  setEditorOpen(!editorOpen);
+                  setDispatcherOpen(false);
+                }}
               >
                 Build & route
+              </button>
+              <button
+                className="map-button"
+                aria-expanded={dispatcherOpen}
+                onClick={() => {
+                  setDispatcherOpen(!dispatcherOpen);
+                  setEditorOpen(false);
+                }}
+              >
+                Dispatcher
               </button>
             </div>
             <div className="toolbar-row">
@@ -754,6 +774,16 @@ export default function Game() {
               <span className="minimap-title">NETWORK OVERVIEW</span>
             </button>
           </div>
+          {dispatcherOpen && (
+            <Dispatcher
+              key={selected}
+              sim={sim.current}
+              selected={selected}
+              select={setSelected}
+              close={() => setDispatcherOpen(false)}
+              changed={() => setTick((t) => t + 1)}
+            />
+          )}
           {editorOpen && (
             <NetworkEditor
               sim={sim.current}
@@ -833,11 +863,7 @@ export default function Game() {
             <div>
               <span className="eyebrow">Running speed</span>
               <strong>
-                {running
-                  ? Math.round(
-                      (engine.speed * 5) / (1 + (train.cars - 3) * 0.07),
-                    )
-                  : 0}
+                {paused ? 0 : Math.round(speedKmh(train.motion.velocity))}
                 <small> km/h</small>
               </strong>
             </div>
@@ -849,6 +875,11 @@ export default function Game() {
               </strong>
             </div>
           </div>
+          {train.motion.wait && (
+            <output className="train-wait-reason">
+              {train.motion.wait.message}
+            </output>
+          )}
           <section className="route-section">
             <div className="section-label">
               <h3>Scheduled route</h3>
@@ -891,19 +922,31 @@ export default function Game() {
             </div>
             <button
               className="add-car"
-              disabled={train.cars >= 6 || sim.current.treasury < 8500}
+              disabled={
+                train.cars >= 6 ||
+                sim.current.treasury < 8500 ||
+                train.motion.started ||
+                train.motion.reversed
+              }
               onClick={() => {
                 if (sim.current.addCar(selected)) {
                   setTick((t) => t + 1);
                   setNotice(
                     `Wagon added to ${engine.name}. Capacity increased.`,
                   );
-                }
+                } else
+                  setNotice(
+                    'The longer consist needs a clear approach. Wait at a station before adding a wagon.',
+                  );
               }}
             >
               <span>
                 <Plus size={14} />{' '}
-                {train.cars >= 6 ? 'Maximum consist' : 'Add passenger wagon'}
+                {train.cars >= 6
+                  ? 'Maximum consist'
+                  : train.motion.started || train.motion.reversed
+                    ? 'Stop forward at a station to add wagons'
+                    : 'Add passenger wagon'}
               </span>
               <strong>+ $8,500</strong>
             </button>
@@ -925,7 +968,7 @@ export default function Game() {
               </div>
               <div>
                 <dt>Traffic control</dt>
-                <dd>Single-track block signals</dd>
+                <dd>Blocks, turnouts & platforms</dd>
               </div>
             </dl>
           </details>
@@ -1003,6 +1046,7 @@ export default function Game() {
                   className="button primary"
                   onClick={() => {
                     setEditorOpen(false);
+                    setDispatcherOpen(false);
                     const fresh = new Simulation();
                     sim.current.restore(fresh.save());
                     sim.current.paused = false;

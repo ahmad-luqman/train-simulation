@@ -536,7 +536,7 @@ export class RailwayWorld {
         );
         lamp.position.set(p.x, p.y + 2.3, p.z);
         this.railGroup.add(lamp);
-        this.signalLights.push({ key: edge.block, mesh: lamp });
+        this.signalLights.push({ key: edge.id, mesh: lamp });
       }
     }
     const inst = new THREE.InstancedMesh(
@@ -724,23 +724,13 @@ export class RailwayWorld {
   }
   private positionOnRoute(id: number, distance: number) {
     const train = this.sim.trains[id];
-    let offset = 0,
-      edge = this.sim.track(train),
-      [a] = this.sim.endpoints(train);
-    while (distance < 0 && -offset < this.sim.services[id].legs.length) {
-      offset--;
-      edge = this.sim.track(train, offset);
-      [a] = this.sim.endpoints(train, offset);
-      distance += edge.length;
-    }
-    const curve = this.curves.get(edge.id)!;
-    const forward = a === edge.a,
-      t = THREE.MathUtils.clamp(distance / edge.length, 0, 1),
-      u = forward ? t : 1 - t;
-    const p = curve.getPointAt(u),
-      tangent = curve.getTangentAt(u).multiplyScalar(forward ? 1 : -1);
-    return { p, angle: Math.atan2(-tangent.x, -tangent.z) };
+    const { p, angle } = this.sim.vehiclePosition(
+      train,
+      train.distance - distance,
+    );
+    return { p: new THREE.Vector3(p.x, p.y, p.z), angle };
   }
+
   private sceneryClear(x: number, z: number, clearance: number) {
     if (Math.abs(x - riverX(z)) < 6.8) return false;
     for (const curve of this.curves.values()) {
@@ -839,8 +829,9 @@ export class RailwayWorld {
       const engine = this.trains[i];
       engine.position.copy(p);
       engine.rotation.y = angle;
-      const running = train.status === 'Running' && !train.held;
-      const phase = train.distance * 2.5;
+      const running = train.motion.velocity > 0 && !train.held;
+      const phase =
+        train.motion.travelled * 2.5 * (train.motion.reversed ? -1 : 1);
       for (const wheel of engine.userData.wheels as THREE.Object3D[])
         wheel.rotation.x = -phase;
       for (const rod of (engine.userData.rods ?? []) as THREE.Object3D[]) {
@@ -921,7 +912,7 @@ export class RailwayWorld {
       this.camera,
       this.sim.trains.map((t, i) => ({
         position: this.trains[i].position,
-        running: t.status === 'Running' && !t.held,
+        running: t.motion.velocity > 0 && !t.held,
         bridge:
           Math.abs(
             this.trains[i].position.x - riverX(this.trains[i].position.z),

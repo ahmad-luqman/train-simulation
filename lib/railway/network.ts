@@ -1,3 +1,4 @@
+import type { DispatchSettings } from './dispatch';
 import { cities, corridors } from './data';
 import { height, riverX } from './terrain';
 
@@ -29,7 +30,8 @@ export type TrackEdge = {
   radius: number;
   bridgeLength: number;
   kind: 'track' | 'siding' | 'loop';
-  block: string;
+  block: string; // Legacy parent corridor ID, retained for loop construction dependencies.
+  direction?: 'both' | 'a-to-b' | 'b-to-a';
   built: boolean;
   used: boolean;
   cost: Cost;
@@ -485,6 +487,7 @@ export type Service = {
   stops: number[];
   dwell: number;
   legs: RouteLeg[];
+  dispatch?: DispatchSettings;
 };
 export function shortestPath(
   network: RailNetwork,
@@ -504,6 +507,11 @@ export function shortestPath(
     if (id === to) break;
     visited.add(id);
     for (const e of network.edges.filter((e) => e.a === id || e.b === id)) {
+      if (
+        (e.direction === 'a-to-b' && e.a !== id) ||
+        (e.direction === 'b-to-a' && e.b !== id)
+      )
+        continue;
       const next = e.a === id ? e.b : e.a,
         value = cost + e.length * (preferred.includes(e.id) ? 0.01 : 1);
       if (value < (costs.get(next) ?? Infinity)) {

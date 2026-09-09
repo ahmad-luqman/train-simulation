@@ -1,3 +1,18 @@
+import {
+  advanceVelocity,
+  circularWaits,
+  consistLength,
+  defaultDispatch,
+  newMotion,
+  pathPosition,
+  performance,
+  TICK,
+  TURNOUT_CLEARANCE,
+  type DispatchState,
+  type DispatchSettings,
+  type Motion,
+  type WaitReason,
+} from './dispatch';
 import { locomotives } from './data';
 import {
   createNetwork,
@@ -25,6 +40,7 @@ export type TrainState = {
   status: 'Running' | 'At station' | 'At signal' | 'On hold';
   load: number;
   stopAtStation?: boolean;
+  motion: Motion;
 };
 export type ConstructionRecord = {
   id: number;
@@ -40,7 +56,8 @@ export type ConstructionRecord = {
   used?: boolean;
 };
 export type SaveState = {
-  version: 2;
+  version: 3;
+  dispatch: DispatchState;
   elapsed: number;
   accumulator: number;
   treasury: number;
@@ -68,6 +85,7 @@ export class Simulation {
     revenue: 0,
     status: 'At station',
     load: 62 + ((id * 7) % 35),
+    motion: { ...newMotion(), departureDue: id * 0.8 },
   }));
   treasury = 425000;
   delivered = 0;
@@ -78,6 +96,11 @@ export class Simulation {
   lengths = new Map(this.network.edges.map((e) => [e.id, e.length]));
   occupied = new Map<string, number>();
   private accumulator = 0;
+  dispatch: DispatchState = {
+    reservations: [],
+    lastDepartures: {},
+    overrides: [],
+  };
   endpoints(t: TrainState, offset = 0) {
     const legs = this.services[t.id].legs,
       leg = legs[(t.leg + offset + legs.length) % legs.length];
@@ -96,76 +119,507 @@ export class Simulation {
     while (this.accumulator >= 0.05 - 1e-10) {
       this.accumulator = Math.max(0, this.accumulator - 0.05);
       this.elapsed += 0.05;
-      for (const t of this.trains) {
-        if (t.held) {
-          t.status = 'On hold';
-          continue;
-        }
-        if (t.dwell > 0) {
-          t.dwell = Math.max(0, t.dwell - 0.05);
-          t.status = 'At station';
-          continue;
-        }
-        const edge = this.track(t),
-          owner = this.occupied.get(edge.block);
-        if (owner !== undefined && owner !== t.id) {
-          t.status = 'At signal';
-          continue;
-        }
-        this.occupied.set(edge.block, t.id);
-        edge.used = true;
-        t.status = 'Running';
-        if (
-          t.distance === 0 &&
-          this.services[t.id].stops.includes(this.endpoints(t)[0])
-        )
-          for (const record of this.construction)
-            if (
-              record.station === `station-${this.endpoints(t)[0]}` &&
-              !record.reversed
-            )
-              record.used = true;
-        t.distance +=
-          (0.05 * locomotives[t.id].speed * 0.25) / (1 + (t.cars - 3) * 0.07);
-        if (t.distance >= edge.length) {
-          const [, b] = this.endpoints(t),
-            service = this.services[t.id];
-          if (service.legs[t.leg].stop) {
-            for (const record of this.construction)
-              if (record.station === `station-${b}` && !record.reversed)
-                record.used = true;
-            const amount = Math.round((t.cars * 18 * t.load) / 100),
-              income = Math.round(amount * (40 + edge.length * 1.7));
-            t.delivered += amount;
-            t.revenue += income;
-            this.delivered += amount;
-            this.treasury += income;
-            this.events.unshift(
-              `${locomotives[t.id].name} → ${nodeAt(this.network, b).name} · ${amount} delivered · +$${income.toLocaleString('en-US')}`,
-            );
-            this.events = this.events.slice(0, 20);
-            t.dwell = service.dwell;
-            t.load = 60 + ((t.delivered + t.id * 3) % 37);
-            if (t.stopAtStation) {
-              t.held = true;
-              t.stopAtStation = false;
-            }
-          }
-          this.occupied.delete(edge.block);
-          t.leg = (t.leg + 1) % service.legs.length;
-          t.distance = 0;
-          t.status = t.held
-            ? 'On hold'
-            : t.dwell > 0
-              ? 'At station'
-              : 'At signal';
-        }
-      }
+      this.releaseCleared();
+      const order = [...this.trains].sort(
+        (a, b) => this.dispatchRank(b) - this.dispatchRank(a) || a.id - b.id,
+      );
+      for (const t of order) this.moveTrain(t);
+      this.releaseCleared();
     }
   }
+  settings(id: number): DispatchSettings {
+    return this.services[id].dispatch ?? defaultDispatch(id);
+  }
+  private dispatchRank(t: TrainState) {
+    return (
+      (this.dispatch.overrides.includes(t.id) ? 10000 : 0) +
+      (this.settings(t.id).priority === 'passenger' ? 10 : 0) +
+      Math.min(
+        100,
+        (this.elapsed - (t.motion.waitingSince ?? this.elapsed)) / 2,
+      )
+    );
+  }
+  private reservation(resource: string) {
+    return this.dispatch.reservations.find((r) => r.resource === resource);
+  }
+  private claim(
+    resource: string,
+    t: TrainState,
+    releaseAt: number | null = null,
+  ) {
+    const old = this.reservation(resource);
+    if (old && old.owner !== t.id)
+      throw new Error('Conflicting dispatch reservation.');
+    if (old) old.releaseAt = releaseAt;
+    else this.dispatch.reservations.push({ resource, owner: t.id, releaseAt });
+  }
+  private releaseCleared() {
+    this.dispatch.reservations = this.dispatch.reservations.filter(
+      (r) =>
+        r.releaseAt === null ||
+        this.trains[r.owner].motion.travelled < r.releaseAt - 1e-8,
+    );
+    this.occupied = new Map(
+      this.dispatch.reservations
+        .filter((r) => r.resource.startsWith('block:'))
+        .map((r) => [r.resource.slice(6), r.owner]),
+    );
+  }
+  private wait(t: TrainState, reason: WaitReason) {
+    t.motion.wait = reason;
+    t.motion.waitingSince ??= this.elapsed;
+    t.status = reason.kind === 'hold' ? 'On hold' : 'At signal';
+  }
+  private conflict(
+    resource: string,
+    t: TrainState,
+    kind: WaitReason['kind'],
+    label: string,
+  ): WaitReason | undefined {
+    const r = this.reservation(resource);
+    return r && r.owner !== t.id
+      ? {
+          kind,
+          resource,
+          owner: r.owner,
+          message: `${label} · ${locomotives[r.owner].name}`,
+        }
+      : undefined;
+  }
+  private platform(t: TrainState, node: number) {
+    const station = this.network.stations.find((s) => s.node === node);
+    if (!station) return undefined;
+    const reserved = station.platforms.find(
+      (p) => this.reservation(`platform:${p}`)?.owner === t.id,
+    );
+    if (reserved) return reserved;
+    const preferred = this.settings(t.id).platforms[String(node)];
+    const choices = preferred ? [preferred] : station.platforms;
+    return (
+      choices.find(
+        (p) =>
+          !this.conflict(`platform:${p}`, t, 'platform', 'Platform occupied'),
+      ) ?? choices[0]
+    );
+  }
+  private entryReason(t: TrainState): WaitReason | undefined {
+    const edge = this.track(t),
+      [from, to] = this.endpoints(t);
+    if (
+      (edge.direction === 'a-to-b' && from !== edge.a) ||
+      (edge.direction === 'b-to-a' && from !== edge.b)
+    )
+      return {
+        kind: 'direction',
+        message:
+          'Track direction prohibits this departure. Change direction or use a parallel track.',
+      };
+    const platform = this.platform(t, to);
+    if (edge.length <= consistLength(t.cars) + TURNOUT_CLEARANCE)
+      return {
+        kind: 'block',
+        message:
+          'This track is too short to clear the complete consist. Assign a longer route.',
+      };
+    return (
+      this.conflict(
+        `block:${edge.id}`,
+        t,
+        'block',
+        `Occupied block ${edge.id}`,
+      ) ??
+      this.conflict(
+        `junction:${from}`,
+        t,
+        'junction',
+        `Conflicting movement at ${nodeAt(this.network, from).name}`,
+      ) ??
+      (platform
+        ? this.conflict(
+            `platform:${platform}`,
+            t,
+            'platform',
+            `No available platform at ${nodeAt(this.network, to).name}`,
+          )
+        : undefined)
+    );
+  }
+  private beginLeg(t: TrainState) {
+    const edge = this.track(t),
+      [from, to] = this.endpoints(t),
+      m = t.motion;
+    const previous = m.history.at(-1);
+    // Reverse the direction of travel, not the physical vehicles. The old rear leads.
+    if (previous?.edge === edge.id && previous.from === to) {
+      t.distance = Math.min(consistLength(t.cars), edge.length - 0.01);
+      m.reversed = !m.reversed;
+      m.history = [];
+    }
+    this.claim(`block:${edge.id}`, t);
+    this.claim(
+      `junction:${from}`,
+      t,
+      m.travelled + consistLength(t.cars) + TURNOUT_CLEARANCE,
+    );
+    const destination = this.platform(t, to);
+    if (destination) this.claim(`platform:${destination}`, t);
+    const source = this.network.stations.find((s) => s.node === from);
+    for (const r of this.dispatch.reservations)
+      if (
+        r.owner === t.id &&
+        source?.platforms.some((p) => r.resource === `platform:${p}`)
+      )
+        r.releaseAt = m.travelled + consistLength(t.cars) + TURNOUT_CLEARANCE;
+    m.started = true;
+    edge.used = true;
+    const key = `${edge.id}:${from}`;
+    this.dispatch.lastDepartures[key] = this.elapsed;
+    m.lateness = Math.max(0, this.elapsed - m.departureDue);
+    m.departures++;
+    if (m.lateness <= 2) m.onTime++;
+    this.dispatch.overrides = this.dispatch.overrides.filter(
+      (id) => id !== t.id,
+    );
+  }
+  private moveTrain(t: TrainState) {
+    const m = t.motion;
+    delete m.wait;
+    if (t.held) {
+      // Hold is an emergency dispatcher stop; ownership is retained.
+      m.velocity = 0;
+      this.wait(t, {
+        kind: 'hold',
+        message: 'Held by dispatcher. Release to continue.',
+      });
+      return;
+    }
+    if (t.dwell > 0) {
+      t.dwell = Math.max(0, t.dwell - TICK);
+      m.velocity = 0;
+      t.status = 'At station';
+      return;
+    }
+    if (!m.started) {
+      const settings = this.settings(t.id),
+        edge = this.track(t),
+        [from] = this.endpoints(t);
+      const last = this.dispatch.lastDepartures[`${edge.id}:${from}`];
+      const reason: WaitReason | undefined =
+        this.elapsed + 1e-8 < m.departureDue
+          ? {
+              kind: 'departure',
+              message: `Departure time ${m.departureDue.toFixed(1)} s`,
+            }
+          : last !== undefined && this.elapsed - last < settings.headway - 1e-8
+            ? {
+                kind: 'headway',
+                message: `Minimum headway · ${(settings.headway - this.elapsed + last).toFixed(1)} s`,
+              }
+            : this.entryReason(t);
+      if (reason) {
+        this.wait(t, reason);
+        m.velocity = 0;
+        return;
+      }
+      this.beginLeg(t);
+    }
+    const edge = this.track(t),
+      [, to] = this.endpoints(t);
+    const remaining = edge.length - t.distance;
+    const junction = `junction:${to}`;
+    const destination = this.platform(t, to);
+    const reason =
+      this.conflict(
+        junction,
+        t,
+        'junction',
+        `Conflicting movement at ${nodeAt(this.network, to).name}`,
+      ) ??
+      (destination
+        ? this.conflict(
+            `platform:${destination}`,
+            t,
+            'platform',
+            `No available platform at ${nodeAt(this.network, to).name}`,
+          )
+        : undefined);
+    const stopDistance = Math.max(
+      0,
+      remaining - (reason ? TURNOUT_CLEARANCE : 0),
+    );
+    if (!reason && remaining <= consistLength(t.cars) + TURNOUT_CLEARANCE) {
+      this.claim(junction, t);
+      if (destination) this.claim(`platform:${destination}`, t);
+    }
+    const physics = performance(
+      t.id,
+      t.cars,
+      t.load,
+      edge,
+      this.endpoints(t)[0],
+    );
+    m.velocity = advanceVelocity(
+      m.velocity,
+      physics.limit,
+      stopDistance,
+      physics.acceleration,
+    );
+    const delta = Math.min(stopDistance, m.velocity * TICK);
+    t.distance += delta;
+    m.travelled += delta;
+    while (
+      m.history.length &&
+      t.distance +
+        m.history.slice(1).reduce((sum, leg) => sum + leg.length, 0) >=
+        consistLength(t.cars)
+    )
+      m.history.shift();
+    t.status = 'Running';
+    if (reason) this.wait(t, reason);
+    else m.waitingSince = null;
+    // Snap only the final sub-millimetre integration remainder at zero speed.
+    if (!reason && edge.length - t.distance < 0.002 && m.velocity < 0.06) {
+      m.travelled += edge.length - t.distance;
+      this.arrive(t);
+    }
+  }
+  private arrive(t: TrainState) {
+    const service = this.services[t.id],
+      leg = service.legs[t.leg],
+      edge = this.track(t),
+      m = t.motion;
+    this.claim(`block:${edge.id}`, t, m.travelled + consistLength(t.cars));
+    m.history.push({ ...leg, length: edge.length });
+    let retained = 0;
+    m.history = m.history
+      .reverse()
+      .filter((section) => {
+        const keep = retained < consistLength(6);
+        retained += section.length;
+        return keep;
+      })
+      .reverse();
+    if (leg.stop) {
+      for (const record of this.construction)
+        if (record.station === `station-${leg.to}` && !record.reversed)
+          record.used = true;
+      const amount = Math.round((t.cars * 18 * t.load) / 100),
+        income = Math.round(amount * (40 + edge.length * 1.7));
+      t.delivered += amount;
+      t.revenue += income;
+      this.delivered += amount;
+      this.treasury += income;
+      this.events.unshift(
+        `${locomotives[t.id].name} → ${nodeAt(this.network, leg.to).name} · ${amount} delivered · +$${income.toLocaleString('en-US')}`,
+      );
+      this.events = this.events.slice(0, 20);
+      t.dwell = service.dwell;
+      t.load = 60 + ((t.delivered + t.id * 3) % 37);
+      m.calls++;
+      if (t.stopAtStation) {
+        t.held = true;
+        t.stopAtStation = false;
+      }
+    }
+    t.leg = (t.leg + 1) % service.legs.length;
+    t.distance = 0;
+    m.started = false;
+    m.velocity = 0;
+    const settings = this.settings(t.id),
+      ready = this.elapsed + t.dwell;
+    m.departureDue =
+      settings.interval > 0
+        ? settings.firstDeparture +
+          Math.max(
+            0,
+            Math.ceil(
+              (ready - settings.firstDeparture) / settings.interval - 1e-9,
+            ),
+          ) *
+            settings.interval
+        : Math.max(ready, settings.firstDeparture);
+    t.status = t.held ? 'On hold' : t.dwell > 0 ? 'At station' : 'At signal';
+  }
+  vehiclePosition(t: TrainState, offset: number) {
+    const m = t.motion;
+    let leg = this.services[t.id].legs[t.leg],
+      distance = t.distance,
+      history = m.history;
+    if (!m.started && history.length) {
+      const last = history.at(-1)!;
+      leg = last;
+      distance = last.length;
+      history = history.slice(0, -1);
+    }
+    const behind = m.reversed ? consistLength(t.cars) - offset : offset;
+    const result = pathPosition(this.network, leg, distance - behind, history);
+    if (m.reversed) result.angle += Math.PI;
+    return result;
+  }
+  configureDispatch(id: number, settings: DispatchSettings) {
+    if (!this.trains[id]) throw new Error('Choose a train.');
+    validateDispatch(this.network, settings);
+    this.services[id].dispatch = structuredClone(settings);
+    const t = this.trains[id];
+    if (!t.motion.started) {
+      const ready = this.elapsed + t.dwell;
+      t.motion.departureDue =
+        settings.interval > 0
+          ? settings.firstDeparture +
+            Math.max(
+              0,
+              Math.ceil(
+                (ready - settings.firstDeparture) / settings.interval - 1e-9,
+              ),
+            ) *
+              settings.interval
+          : Math.max(ready, settings.firstDeparture);
+    }
+    this.revision++;
+  }
+  prioritize(id: number) {
+    if (!this.trains[id]) throw new Error('Choose a train.');
+    if (!this.dispatch.overrides.includes(id)) this.dispatch.overrides.push(id);
+  }
+  setDirection(id: string, direction: 'both' | 'a-to-b' | 'b-to-a') {
+    const edge = edgeAt(this.network, id);
+    if (!edge || !['both', 'a-to-b', 'b-to-a'].includes(direction))
+      throw new Error('Choose a track direction.');
+    if (this.protectedEdges().has(id) || this.reservation(`block:${id}`))
+      throw new Error('Wait until the complete train clears this track.');
+    edge.direction = direction;
+    this.revision++;
+  }
+  parallelOptions(id: number) {
+    const t = this.trains[id];
+    if (!t || t.motion.started || t.motion.velocity > 0) return [];
+    const [from, to] = this.endpoints(t),
+      current = this.track(t);
+    return this.network.edges.filter(
+      (e) =>
+        e.id !== current.id &&
+        ((e.a === from && e.b === to) || (e.a === to && e.b === from)) &&
+        (!e.direction ||
+          e.direction === 'both' ||
+          (e.direction === 'a-to-b' ? e.a === from : e.b === from)) &&
+        !this.conflict(`block:${e.id}`, t, 'block', 'Occupied'),
+    );
+  }
+  useParallel(id: number, edge: string) {
+    if (!this.parallelOptions(id).some((e) => e.id === edge))
+      throw new Error(
+        'Stop before departure and choose a free parallel track.',
+      );
+    this.services[id].legs[this.trains[id].leg].edge = edge;
+    this.prioritize(id);
+    this.revision++;
+  }
+  canTurnBack(id: number) {
+    const t = this.trains[id];
+    if (!t || t.motion.velocity > 0.06) return false;
+    const previous = t.motion.history.at(-1);
+    const leg =
+      !t.motion.started && previous ? previous : this.services[id].legs[t.leg];
+    const edge = edgeAt(this.network, leg.edge),
+      from = leg.from,
+      to = leg.to;
+    if (
+      (t.motion.started ? t.distance : (previous?.length ?? 0)) <=
+      consistLength(t.cars) + TURNOUT_CLEARANCE
+    )
+      return false;
+    return (
+      this.network.stations.some((s) => s.node === from) &&
+      this.network.stations.some((s) => s.node === to) &&
+      (!edge.direction || edge.direction === 'both')
+    );
+  }
+  turnBack(id: number) {
+    if (!this.canTurnBack(id))
+      throw new Error(
+        'Stop with the entire consist beyond the turnout on a bidirectional station track before turning back.',
+      );
+    const t = this.trains[id],
+      m = t.motion;
+    const previous = m.history.at(-1);
+    const leg =
+      !m.started && previous ? previous : this.services[id].legs[t.leg];
+    const edge = edgeAt(this.network, leg.edge),
+      from = leg.from,
+      to = leg.to;
+    const distance = m.started ? t.distance : edge.length;
+    const service = planService(
+      this.network,
+      id,
+      'Recovery shuttle',
+      [to, from],
+      this.services[id].dwell,
+      [edge.id],
+    );
+    service.dispatch = structuredClone(this.settings(id));
+    // The old rear becomes the lead; every vehicle remains at the same chainage.
+    t.distance = edge.length - distance + consistLength(t.cars);
+    t.leg = 0;
+    this.services[id] = service;
+    m.reversed = !m.reversed;
+    m.history = [];
+    m.velocity = 0;
+    m.started = true;
+    t.dwell = 0;
+    t.held = false;
+    t.stopAtStation = true;
+    for (const r of this.dispatch.reservations) {
+      if (r.owner !== id || r.resource === `block:${edge.id}`) continue;
+      // Reservations on the old path stay locked until a complete consist has moved away.
+      r.releaseAt = m.travelled + consistLength(t.cars) + TURNOUT_CLEARANCE;
+    }
+    this.claim(`block:${edge.id}`, t);
+    this.revision++;
+  }
+  dispatcherSnapshot() {
+    const waits = this.trains
+      .filter((t) => t.motion.wait)
+      .map((t) => ({
+        id: t.id,
+        ...t.motion.wait!,
+        seconds: this.elapsed - (t.motion.waitingSince ?? this.elapsed),
+      }));
+    const departures = this.trains.reduce((n, t) => n + t.motion.departures, 0),
+      onTime = this.trains.reduce((n, t) => n + t.motion.onTime, 0);
+    return {
+      waits,
+      cycles: circularWaits(waits),
+      reservations: this.dispatch.reservations,
+      departures,
+      punctuality: departures ? (onTime / departures) * 100 : 100,
+      throughput: this.elapsed
+        ? (this.trains.reduce((n, t) => n + t.motion.calls, 0) / this.elapsed) *
+          60
+        : 0,
+    };
+  }
+
   addCar(id: number) {
     const t = this.trains[id];
-    if (!t || t.cars >= 6 || this.treasury < 8500) return false;
+    if (
+      !t ||
+      t.cars >= 6 ||
+      this.treasury < 8500 ||
+      t.motion.started ||
+      t.motion.reversed
+    )
+      return false;
+    let rear = consistLength(t.cars + 1);
+    for (const leg of [...t.motion.history].reverse()) {
+      if (rear <= 0) break;
+      if (this.conflict(`block:${leg.edge}`, t, 'block', 'Occupied'))
+        return false;
+      rear -= leg.length;
+    }
+    if (t.motion.history.length && rear > 0) return false;
+    for (const r of this.dispatch.reservations)
+      if (r.owner === id && r.releaseAt !== null) r.releaseAt += 3;
     t.cars++;
     this.treasury -= 8500;
     return true;
@@ -201,24 +655,49 @@ export class Simulation {
       throw new Error(
         `The first stop must be ${nodeAt(this.network, at).name}, where this train is waiting.`,
       );
+    for (const r of this.dispatch.reservations) {
+      if (r.owner !== t.id || !r.resource.startsWith('platform:')) continue;
+      const atStation = this.network.stations.find((s) => s.node === at)!;
+      if (!atStation.platforms.some((p) => r.resource === `platform:${p}`))
+        throw new Error('Clear the previous station before changing service.');
+    }
+    const schedule = structuredClone(service.dispatch ?? this.settings(t.id));
     this.services[t.id] = structuredClone(service);
+    if (
+      service.dispatch ||
+      JSON.stringify(schedule) !== JSON.stringify(defaultDispatch(t.id))
+    )
+      this.services[t.id].dispatch = schedule;
     t.leg = 0;
     t.distance = 0;
     t.dwell = service.dwell;
+    const ready = this.elapsed + t.dwell;
+    t.motion.departureDue =
+      schedule.interval > 0
+        ? schedule.firstDeparture +
+          Math.max(
+            0,
+            Math.ceil(
+              (ready - schedule.firstDeparture) / schedule.interval - 1e-9,
+            ),
+          ) *
+            schedule.interval
+        : Math.max(ready, schedule.firstDeparture);
     this.revision++;
   }
-  // Include the trailing consist on the previous leg even after the locomotive has left it.
   protectedEdges() {
-    const result = new Set<string>();
+    const result = new Set(
+      this.dispatch.reservations
+        .filter((r) => r.resource.startsWith('block:'))
+        .map((r) => r.resource.slice(6)),
+    );
     for (const t of this.trains) {
-      result.add(this.track(t).id);
-      let rear = 5.3 + t.cars * 3 - t.distance,
-        offset = -1;
-      while (rear > 0 && -offset <= this.services[t.id].legs.length) {
-        const e = this.track(t, offset);
-        result.add(e.id);
-        rear -= e.length;
-        offset--;
+      if (t.motion.started || t.distance > 0) result.add(this.track(t).id);
+      let rear = consistLength(t.cars) - t.distance;
+      for (const leg of [...t.motion.history].reverse()) {
+        if (rear <= 0) break;
+        result.add(leg.edge);
+        rear -= leg.length;
       }
     }
     return result;
@@ -365,6 +844,8 @@ export class Simulation {
       if (edgeAt(this.network, record.edge).used)
         return 'This track has entered service. Bulldoze it without a refund after unassigning it.';
     }
+    if (record.platform && this.reservation(`platform:${record.platform}`))
+      return 'A train has reserved this platform. Wait for rear clearance.';
     if (record.station) {
       const station = this.network.stations.find(
         (s) => s.id === record.station,
@@ -435,12 +916,20 @@ export class Simulation {
     this.changed();
   }
   private changed() {
+    this.dispatch.lastDepartures = Object.fromEntries(
+      Object.entries(this.dispatch.lastDepartures).filter(([key]) =>
+        this.network.edges.some(
+          (e) => key === `${e.id}:${e.a}` || key === `${e.id}:${e.b}`,
+        ),
+      ),
+    );
     this.lengths = new Map(this.network.edges.map((e) => [e.id, e.length]));
     this.revision++;
   }
   save(): SaveState {
     return structuredClone({
-      version: 2,
+      version: 3,
+      dispatch: this.dispatch,
       elapsed: this.elapsed,
       accumulator: this.accumulator,
       treasury: this.treasury,
@@ -454,11 +943,11 @@ export class Simulation {
   restore(value: unknown) {
     // Validate a detached candidate; malformed saves cannot change the live world or treasury.
     const raw = value as SaveState;
-    if (!raw || ![1, 2].includes(raw.version))
+    if (!raw || ![1, 2, 3].includes(raw.version))
       throw new Error('This save version is not compatible.');
     const candidate = new Simulation();
     const s = structuredClone(raw);
-    if (raw.version === 2) {
+    if (raw.version >= 2) {
       validateNetwork(s.network);
       candidate.network = s.network;
       if (
@@ -614,12 +1103,39 @@ export class Simulation {
       const edge = edgeAt(candidate.network, legs[t.leg].edge);
       if (t.distance >= edge.length) throw new Error('Invalid train position.');
       if (t.distance > 0) {
-        if (occupancy.has(edge.block))
+        if (occupancy.has(edge.id))
           throw new Error('Conflicting track reservations in save.');
-        occupancy.set(edge.block, i);
+        occupancy.set(edge.id, i);
       }
     });
     candidate.trains = s.trains;
+    candidate.elapsed = s.elapsed;
+    candidate.dispatch =
+      raw.version === 3
+        ? s.dispatch
+        : { reservations: [], lastDepartures: {}, overrides: [] };
+    if (raw.version !== 3) {
+      for (const t of candidate.trains) {
+        t.motion = newMotion();
+        if (t.distance > 0) {
+          t.motion.started = true;
+          candidate.claim(`block:${candidate.track(t).id}`, t);
+          if (t.distance < consistLength(t.cars) + TURNOUT_CLEARANCE)
+            candidate.claim(
+              `junction:${candidate.endpoints(t)[0]}`,
+              t,
+              consistLength(t.cars) + TURNOUT_CLEARANCE - t.distance,
+            );
+          if (candidate.track(t).length - t.distance < TURNOUT_CLEARANCE) {
+            candidate.claim(`junction:${candidate.endpoints(t)[1]}`, t);
+            const platform = candidate.platform(t, candidate.endpoints(t)[1]);
+            if (platform) candidate.claim(`platform:${platform}`, t);
+          }
+        }
+      }
+    }
+    validateMotion(candidate);
+    candidate.releaseCleared();
     candidate.elapsed = s.elapsed;
     candidate.treasury = s.treasury;
     candidate.delivered = s.delivered;
@@ -631,7 +1147,8 @@ export class Simulation {
     this.treasury = candidate.treasury;
     this.delivered = candidate.delivered;
     this.accumulator = candidate.accumulator;
-    this.occupied = occupancy;
+    this.dispatch = candidate.dispatch;
+    this.occupied = candidate.occupied;
     this.changed();
     this.events = ['Local railway save restored.'];
   }
@@ -690,6 +1207,8 @@ function validateNetwork(n: RailNetwork) {
       !ids.has(edge.b) ||
       edge.a === edge.b ||
       typeof edge.block !== 'string' ||
+      (edge.direction !== undefined &&
+        !['both', 'a-to-b', 'b-to-a'].includes(edge.direction)) ||
       !['track', 'siding', 'loop'].includes(edge.kind) ||
       typeof edge.built !== 'boolean' ||
       typeof edge.used !== 'boolean' ||
@@ -844,6 +1363,7 @@ function validateService(network: RailNetwork, s: Service, id: number) {
     s.legs.length > 1024
   )
     throw new Error('Invalid service.');
+  if (s.dispatch) validateDispatch(network, s.dispatch);
   s.legs.forEach((leg: RouteLeg, i) => {
     const edge = edgeAt(network, leg?.edge),
       next = s.legs[(i + 1) % s.legs.length];
@@ -867,4 +1387,203 @@ function validateService(network: RailNetwork, s: Service, id: number) {
     JSON.stringify(arrivals) !== JSON.stringify(expected)
   )
     throw new Error('Service does not visit its ordered stops.');
+}
+
+function validateDispatch(network: RailNetwork, settings: DispatchSettings) {
+  if (
+    !settings ||
+    !['passenger', 'freight'].includes(settings.priority) ||
+    !Number.isFinite(settings.firstDeparture) ||
+    settings.firstDeparture < 0 ||
+    settings.firstDeparture > 1e9 ||
+    !Number.isFinite(settings.interval) ||
+    settings.interval < 0 ||
+    settings.interval > 3600 ||
+    !Number.isFinite(settings.headway) ||
+    settings.headway < 0 ||
+    settings.headway > 300 ||
+    !settings.platforms ||
+    typeof settings.platforms !== 'object' ||
+    Array.isArray(settings.platforms)
+  )
+    throw new Error(
+      'Use a valid priority, departure time, interval (0–3600 s) and headway (0–300 s).',
+    );
+  for (const [node, platform] of Object.entries(settings.platforms))
+    if (
+      !network.stations.some(
+        (s) => String(s.node) === node && s.platforms.includes(platform),
+      )
+    )
+      throw new Error('The preferred platform must belong to its station.');
+}
+function validateMotion(sim: Simulation) {
+  const d = sim.dispatch;
+  if (
+    !d ||
+    !Array.isArray(d.reservations) ||
+    d.reservations.length > 4096 ||
+    !Array.isArray(d.overrides) ||
+    new Set(d.overrides).size !== d.overrides.length ||
+    d.overrides.some((id) => !Number.isInteger(id) || !sim.trains[id]) ||
+    !d.lastDepartures ||
+    typeof d.lastDepartures !== 'object' ||
+    Array.isArray(d.lastDepartures)
+  )
+    throw new Error('Invalid dispatcher state.');
+  const resources = new Set<string>();
+  for (const e of sim.network.edges) resources.add(`block:${e.id}`);
+  for (const n of sim.network.nodes) resources.add(`junction:${n.id}`);
+  for (const s of sim.network.stations)
+    for (const p of s.platforms) resources.add(`platform:${p}`);
+  const owned = new Set<string>();
+  for (const r of d.reservations) {
+    if (
+      !r ||
+      !resources.has(r.resource) ||
+      owned.has(r.resource) ||
+      !Number.isInteger(r.owner) ||
+      !sim.trains[r.owner] ||
+      (r.releaseAt !== null &&
+        (!Number.isFinite(r.releaseAt) ||
+          r.releaseAt <= sim.trains[r.owner].motion.travelled))
+    )
+      throw new Error('Invalid or conflicting dispatch reservation.');
+    owned.add(r.resource);
+  }
+  for (const [key, time] of Object.entries(d.lastDepartures))
+    if (
+      !sim.network.edges.some(
+        (e) => key === `${e.id}:${e.a}` || key === `${e.id}:${e.b}`,
+      ) ||
+      !Number.isFinite(time) ||
+      time < 0 ||
+      time > sim.elapsed + 1e-8
+    )
+      throw new Error('Invalid headway clock.');
+  for (const t of sim.trains) {
+    const m = t.motion;
+    if (
+      !m ||
+      ![
+        m.velocity,
+        m.travelled,
+        m.departureDue,
+        m.lateness,
+        m.departures,
+        m.onTime,
+        m.calls,
+      ].every((n) => Number.isFinite(n) && n >= 0) ||
+      m.velocity > locomotives[t.id].speed * 0.25 + 1e-6 ||
+      m.onTime > m.departures ||
+      ![m.departures, m.onTime, m.calls].every(Number.isSafeInteger) ||
+      typeof m.started !== 'boolean' ||
+      typeof m.reversed !== 'boolean' ||
+      (m.waitingSince !== null &&
+        (!Number.isFinite(m.waitingSince) || m.waitingSince < 0)) ||
+      !Array.isArray(m.history) ||
+      m.history.length > 400 ||
+      (!m.started && (m.velocity !== 0 || t.distance !== 0))
+    )
+      throw new Error('Invalid train motion.');
+    if (
+      m.wait &&
+      (![
+        'block',
+        'junction',
+        'platform',
+        'departure',
+        'headway',
+        'direction',
+        'hold',
+      ].includes(m.wait.kind) ||
+        typeof m.wait.message !== 'string' ||
+        m.wait.message.length > 300 ||
+        (m.wait.owner !== undefined &&
+          (!Number.isInteger(m.wait.owner) ||
+            !sim.trains[m.wait.owner] ||
+            m.wait.owner === t.id)) ||
+        (m.wait.resource !== undefined && !resources.has(m.wait.resource)))
+    )
+      throw new Error('Invalid waiting reason.');
+    m.history.forEach((leg, i) => {
+      const edge = edgeAt(sim.network, leg?.edge);
+      if (
+        !edge ||
+        leg.length !== edge.length ||
+        !(
+          (edge.a === leg.from && edge.b === leg.to) ||
+          (edge.b === leg.from && edge.a === leg.to)
+        ) ||
+        (i > 0 && m.history[i - 1].to !== leg.from)
+      )
+        throw new Error('Invalid travelled path.');
+    });
+    if (m.history.length && m.history.at(-1)!.to !== sim.endpoints(t)[0])
+      throw new Error('Travelled path does not reach the train.');
+    const requireBlock = (edge: string) => {
+      if (
+        !d.reservations.some(
+          (r) => r.resource === `block:${edge}` && r.owner === t.id,
+        )
+      )
+        throw new Error('Missing full-consist reservation.');
+    };
+    if (m.started) {
+      requireBlock(sim.track(t).id);
+      if (
+        d.reservations.find((r) => r.resource === `block:${sim.track(t).id}`)!
+          .releaseAt !== null
+      )
+        throw new Error('An active block cannot expire before arrival.');
+    }
+    const [from, to] = sim.endpoints(t);
+    const requireJunction = (node: number, clearance: number) => {
+      const r = d.reservations.find(
+        (r) => r.resource === `junction:${node}` && r.owner === t.id,
+      );
+      if (
+        !r ||
+        (r.releaseAt !== null && r.releaseAt + 1e-8 < m.travelled + clearance)
+      )
+        throw new Error('Missing turnout clearance reservation.');
+    };
+    if (m.started && t.distance < consistLength(t.cars) + TURNOUT_CLEARANCE)
+      requireJunction(
+        from,
+        consistLength(t.cars) + TURNOUT_CLEARANCE - t.distance,
+      );
+    if (
+      m.started &&
+      sim.track(t).length - t.distance < TURNOUT_CLEARANCE - 1e-6
+    )
+      requireJunction(to, 0);
+    if (!m.started && m.history.length) {
+      requireJunction(from, 0);
+      const station = sim.network.stations.find((s) => s.node === from);
+      if (
+        station &&
+        !station.platforms.some((p) =>
+          d.reservations.some(
+            (r) => r.resource === `platform:${p}` && r.owner === t.id,
+          ),
+        )
+      )
+        throw new Error('Missing occupied platform reservation.');
+    }
+    let rear = consistLength(t.cars) - t.distance;
+    for (const leg of [...m.history].reverse()) {
+      if (rear <= 1e-8) break;
+      requireBlock(leg.edge);
+      const reservation = d.reservations.find(
+        (r) => r.resource === `block:${leg.edge}`,
+      )!;
+      if (
+        reservation.releaseAt !== null &&
+        reservation.releaseAt + 1e-8 < m.travelled + rear
+      )
+        throw new Error('Rear reservation expires too soon.');
+      rear -= leg.length;
+    }
+  }
 }

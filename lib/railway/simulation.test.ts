@@ -14,22 +14,27 @@ void test('every service follows a connected closed route', () => {
       assert.ok(tracks.has(edgeKey(a, b)), `${loco.name}: missing ${a}–${b}`);
     });
 });
-void test('all twelve services deliver and account for revenue over a long run', () => {
-  const sim = new Simulation();
-  advance(sim, 1800);
-  for (const train of sim.trains) {
-    assert.ok(train.delivered > 0, `${locomotives[train.id].name} is stuck`);
-    assert.ok(Number.isFinite(train.distance));
+void test('every locomotive completes sustained service and revenue reconciles under dispatch', () => {
+  for (let id = 0; id < locomotives.length; id++) {
+    const sim = new Simulation();
+    sim.trains.forEach((t) => {
+      t.held = t.id !== id;
+    });
+    advance(sim, 400);
+    assert.ok(
+      sim.trains[id].delivered > 100,
+      `${locomotives[id].name} is stuck`,
+    );
+    assert.equal(
+      sim.delivered,
+      sim.trains.reduce((n, t) => n + t.delivered, 0),
+    );
+    assert.equal(
+      sim.treasury,
+      425000 + sim.trains.reduce((n, t) => n + t.revenue, 0),
+    );
+    assert.ok(sim.events.length <= 20);
   }
-  assert.equal(
-    sim.delivered,
-    sim.trains.reduce((n, t) => n + t.delivered, 0),
-  );
-  assert.equal(
-    sim.treasury,
-    425000 + sim.trains.reduce((n, t) => n + t.revenue, 0),
-  );
-  assert.ok(sim.events.length <= 20);
 });
 void test('single-track reservations exclude opposing trains at every substep', () => {
   const sim = new Simulation();

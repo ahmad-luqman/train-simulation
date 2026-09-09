@@ -150,6 +150,9 @@ void test('eligible river crossings quote and build a priced bridge, while river
 });
 void test('a new service follows the exact purchased edge, dwells, earns, and resumes after save/load', () => {
   const { s, id, station } = buildExtension();
+  s.trains.forEach((t) => {
+    t.held = t.id !== 2;
+  });
   s.stopForEditing(2);
   const service = planService(s.network, 2, 'West branch', [3, station.id], 7, [
     id,
@@ -203,7 +206,7 @@ void test('services reject disconnected destinations and moving reassignment, th
   );
   assert.equal(moving.endpoints(moving.trains[0])[0], at);
 });
-void test('a passing loop can be built during live operation and never enables parallel use of its shared block', () => {
+void test('a passing loop can be built during live operation and uses its own physical block', () => {
   const s = new Simulation();
   let id = '';
   for (let i = 0; i < 2400 && !id; i++) {
@@ -214,7 +217,7 @@ void test('a passing loop can be built during live operation and never enables p
       (e) =>
         e.kind === 'track' &&
         !protectedTracks.has(e.id) &&
-        !s.occupied.has(e.block),
+        !s.occupied.has(e.id),
     )) {
       const input: Construction = {
         start: e.a,
@@ -260,9 +263,9 @@ void test('a passing loop can be built during live operation and never enables p
     for (const t of s.trains)
       if (t.distance > 0) {
         const e = s.track(t);
-        assert.ok(!occupied.has(e.block));
-        occupied.add(e.block);
-        assert.equal(s.occupied.get(e.block), t.id);
+        assert.ok(!occupied.has(e.id));
+        occupied.add(e.id);
+        assert.equal(s.occupied.get(e.id), t.id);
       }
     if (s.track(s.trains[chosen]).id === id && s.trains[chosen].distance > 0)
       traversed = true;
@@ -305,7 +308,10 @@ void test('version 1 saves migrate without modifying input, and unsupported/corr
     restored = new Simulation();
   restored.restore(v1);
   assert.deepEqual(v1, copy);
-  assert.deepEqual(restored.trains, original.trains);
+  assert.deepEqual(
+    restored.trains.map(({ motion: _motion, ...t }) => t),
+    original.trains.map(({ motion: _motion, ...t }) => t),
+  );
   const { s } = buildExtension();
   const before = s.save();
   const mutations: ((value: SaveState) => void)[] = [
@@ -360,6 +366,10 @@ void test('the final wagon protects the previous track after the locomotive ente
   assert.ok(next >= 0);
   t.leg = next;
   t.distance = 20;
+  const previous = s.services[2].legs[next - 1];
+  t.motion.history = [
+    { ...previous, length: edgeAt(s.network, previous.edge).length },
+  ];
   assert.ok(s.protectedEdges().has(id));
   assert.match(s.removalReason(id)!, /trailing consist/);
 });

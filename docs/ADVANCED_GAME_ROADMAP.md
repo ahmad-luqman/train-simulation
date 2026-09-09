@@ -2,7 +2,7 @@
 
 **Purpose:** Turn the current railway sandbox into a visually rich management game with meaningful construction, dispatch, economic, and fleet decisions.  
 **Baseline:** Current repository at `315b7fb`, reviewed 9 September 2026.  
-**Status:** Phased development plan. Phase 1 implementation is recorded in [the graphics implementation notes](PHASE_1_GRAPHICS.md); its browser acceptance checks and Phase 0 performance baseline remain open. Phase 2 construction and service editing are implemented in [the construction notes](PHASE_2_CONSTRUCTION.md), including their shared-network, fixed-tick and save-migration prerequisites. Browser acceptance and measured performance remain open; Phases 3–7 remain planned.
+**Status:** Phased development plan. Phase 1 implementation is recorded in [the graphics implementation notes](PHASE_1_GRAPHICS.md); its browser acceptance checks and Phase 0 performance baseline remain open. Phase 2 construction and service editing are implemented in [the construction notes](PHASE_2_CONSTRUCTION.md), including their shared-network, fixed-tick and save-migration prerequisites. Phase 3 movement and dispatch are implemented in [the dispatch notes](PHASE_3_DISPATCH.md). Browser acceptance and measured performance remain open; Phases 4–7 remain planned.
 
 ## Recommended direction
 
@@ -25,11 +25,11 @@ The project already has twelve selectable locomotives, eight towns, thirteen cur
 The original baseline had these limitations; Phase 2 resolves network ownership and editable-network persistence as noted below:
 
 - **Network ownership — resolved in Phase 2:** Shared sampled geometry owns track lengths and prices; services store exact edge itineraries, including parallel tracks.
-- **Movement and dispatch:** Speed is effectively constant per train. Corridor reservations protect locomotive positions, but release at arrival before accounting for the complete trailing consist. Stations and junction movements are simplified.
+- **Movement and dispatch — implemented in Phase 3:** Actual speed follows traction, mass, grade, curve limits and braking. Independent track blocks, shared turnouts and platforms retain full-consist protection. Timetables, priority arbitration, route history, terminal reversal and circular-wait diagnostics/recovery are implemented. Platforms remain logical resources and endpoint turnouts remain conservative shared movement areas.
 - **Economy:** Cargo loads are generated rather than taken from inventories. Deliveries create revenue without recurring fuel, maintenance, staff, or infrastructure costs.
 - **Fleet:** Locomotives share the same underlying model design with different liveries. Wagon purchases change a count rather than a cargo-specific consist.
 - **Presentation:** Terrain, buildings, water, and smoke are simple procedural geometry. Graphics presets mainly change resolution and shadows.
-- **Persistence and verification — partly resolved in Phase 2:** Version 2 saves persist edited networks, stations, services and construction accounting; original version 1 saves migrate atomically. The locomotive roster remains fixed. Browser interaction and performance measurements still need to be established.
+- **Persistence and verification — extended in Phase 3:** Version 3 saves persist edited networks, stations, services, construction accounting, motion, actual paths, schedules and reservations; versions 1/2 migrate atomically. The locomotive roster remains fixed. Browser interaction and performance measurements still need to be established.
 
 ## Phase overview
 
@@ -136,6 +136,8 @@ Export game assets as glTF/GLB and verify materials and animation in the actual 
 **Boundary:** Keep conservative corridor reservations until Phase 3. Do not enable closer headways merely because the editor can draw more track.
 
 ## Phase 3 — Make dispatching and movement matter
+
+**Implementation:** Movement, full-consist dispatch, timetable controls, platform queues and physical recovery are implemented. See [implementation and verification notes](PHASE_3_DISPATCH.md). Automated acceptance scenarios pass; browser interaction and measured GPU performance remain open. The next playable milestone is Phase 4’s transport economy.
 
 **Player benefit:** Congestion has understandable causes, and infrastructure or scheduling changes produce visible improvements.
 
