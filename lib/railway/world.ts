@@ -636,15 +636,29 @@ export class RailwayWorld {
     if (this.mode === mode) return;
     const target = this.controls.target.clone(),
       position = this.camera.position.clone();
+    // Preserve the apparent scale when switching projection, including a close follow view.
+    const halfHeight =
+      this.camera instanceof THREE.OrthographicCamera
+        ? 86 / this.camera.zoom
+        : position.distanceTo(target) *
+          Math.tan(THREE.MathUtils.degToRad(this.camera.fov / 2));
     this.controls.dispose();
     this.mode = mode;
     if (mode === 'iso') {
       this.camera = new THREE.OrthographicCamera(-90, 90, 90, -90, 0.1, 800);
       this.camera.position.copy(target).add(new THREE.Vector3(140, 155, 175));
-      if (this.following) this.camera.zoom = 4;
+      this.camera.zoom = THREE.MathUtils.clamp(86 / halfHeight, 0.55, 9);
     } else {
       this.camera = new THREE.PerspectiveCamera(43, 1, 0.1, 800);
-      this.camera.position.copy(position);
+      this.camera.position.copy(
+        position
+          .sub(target)
+          .normalize()
+          .multiplyScalar(
+            halfHeight / Math.tan(THREE.MathUtils.degToRad(43 / 2)),
+          )
+          .add(target),
+      );
     }
     this.controls = this.makeControls();
     this.controls.target.copy(target);
