@@ -66,3 +66,7 @@ The generated Shadcn/Base UI catalog is retained and composed by the app. Its ex
 Simulation tests exercise connected routes, long-running progress for every locomotive, exclusive block reservations, pause/hold, capacity purchases, save restoration, and invalid-save atomicity. The app can be compiled and checked without a GPU. Visual rendering and browser interactions still require a WebGL 2-capable browser with hardware acceleration.
 
 Optional WebMCP tools (`get_railway_state`, `follow_train`, `set_train_hold`) are registered only when `document.modelContext` is available. No supported browser validation context was available during this implementation, so these experimental integrations have not been verified end to end. Unsupported browsers run the normal interface unchanged.
+
+## Development roadmap
+
+See [the advanced game development roadmap](docs/ADVANCED_GAME_ROADMAP.md) for the phased graphics, construction, dispatch, economy, fleet, and campaign plan, including milestones and acceptance criteria.
