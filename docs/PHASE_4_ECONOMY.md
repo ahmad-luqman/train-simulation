@@ -60,3 +60,11 @@ Version 5 uses the same physical map and migrates in place. Positions, routes, c
 Browser interaction/visual acceptance, 200% text enlargement, sustained GPU/frame-cost measurement and independent physical-system review remain open. The Sites environment permits browser testing only when explicitly requested; no browser screenshots or interactions were performed in this implementation. The existing local route responds successfully. Headless tests and production compilation do not certify the new office's rendered layout.
 
 Phase 4 balances the three stated freight chains and one passenger queue model. Distinct locomotive capabilities, cargo mass by commodity, mixed wagon families within one train, depot servicing, campaign progression and detailed industrial buildings remain later-phase work. Rates deliberately use simulation minutes rather than real-world economic estimates. Long-run journal size grows with simulated time; the UI paginates it and save errors preserve the active railway and existing slot.
+
+## Follow-camera correction
+
+The reported screenshot showed Alpine Monarch in the off-network depot queue. Its hidden renderer group held Coalhaven’s station-center placeholder, and follow immediately zoomed to it. Camera subjects now come from authoritative vehicle poses only when the train is visible. A queued follow request preserves camera position, focus and zoom; the interface shows “Waiting for dispatch” and automatically acquires the locomotive when it enters a physical berth. Visible-train transitions ease both focus and zoom, then preserve manual zoom while tracking. Trackside rejects queued subjects without changing the camera mode.
+
+Four focused camera tests cover the screenshot’s queued Alpine Monarch state in both projections, automatic physical-berth acquisition and on-screen centering, switching through a queued subject, smooth zoom, frame-rate independence and retained manual framing. Browser interaction and GPU acceptance remain separately open.
+
+Follow-camera verification: all 79 regression tests, typecheck, lint and production build pass. The rebuilt local Worker responds with HTTP 200 at `http://localhost:8787`.

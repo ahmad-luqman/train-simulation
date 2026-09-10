@@ -677,9 +677,13 @@ export default function Game() {
                 className="map-button"
                 disabled={!ready}
                 onClick={() => {
-                  setFollowing(false);
-                  setMode('3d');
-                  world.current?.setTrackside();
+                  if (world.current?.setTrackside()) {
+                    setFollowing(false);
+                    setMode('3d');
+                  } else
+                    setNotice(
+                      'This train is in the depot queue. Use Follow when dispatched to watch it when it appears.',
+                    );
                 }}
               >
                 Trackside
@@ -727,7 +731,10 @@ export default function Game() {
           )}
           {following && (
             <div className="follow-banner">
-              <span className="live-dot" /> Following {engine.name}
+              <span className="live-dot" />{' '}
+              {sim.current.visible(train)
+                ? `Following ${engine.name}`
+                : `Waiting for dispatch · ${engine.name}`}
               <button aria-label="Stop following" onClick={follow}>
                 <X size={14} />
               </button>
@@ -891,7 +898,13 @@ export default function Game() {
               className={`button primary ${following ? 'is-following' : ''}`}
               onClick={follow}
             >
-              {following ? 'Following train' : 'Follow train'}{' '}
+              {following
+                ? sim.current.visible(train)
+                  ? 'Following train'
+                  : 'Waiting for dispatch'
+                : sim.current.visible(train)
+                  ? 'Follow train'
+                  : 'Follow when dispatched'}{' '}
               <ArrowUpRight size={15} />
             </button>
             <button

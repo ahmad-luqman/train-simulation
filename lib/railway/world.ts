@@ -1,3 +1,4 @@
+import { FollowCamera, trainCameraTarget } from './follow-camera';
 import { MAP, MAP_SCALE } from './map';
 import { vehicles } from './safety';
 import { sample } from './topology';
@@ -55,7 +56,7 @@ export class RailwayWorld {
   private detailLevel = -1;
   private emission = new Float32Array(12);
   private previousRunning = Array.from({ length: 12 }, () => false);
-  private followTransition = false;
+  private followCamera = new FollowCamera();
   private routeHighlight = new THREE.Group();
   private highlighted = -1;
   private networkRevision = -1;
@@ -937,25 +938,23 @@ export class RailwayWorld {
       !this.photoMode && this.sim.visible(this.sim.trains[this.selected]);
     this.routeHighlight.visible = !this.photoMode;
     this.updateRouteHighlight();
+    const subject =
+      this.following || this.trackside
+        ? trainCameraTarget(this.sim, this.selected)
+        : null;
     if (this.trackside) {
-      if (this.camera.position.distanceTo(target) > 65) this.placeTrackside();
-      this.controls.target.lerp(target, 1 - Math.exp(-delta * 4));
+      if (subject) {
+        if (this.camera.position.distanceTo(subject) > 65)
+          this.placeTrackside();
+        this.controls.target.lerp(subject, 1 - Math.exp(-delta * 4));
+      }
     } else if (this.following) {
-      const movement = target
-        .clone()
-        .sub(this.controls.target)
-        .multiplyScalar(1 - Math.exp(-delta * 5));
-      this.controls.target.add(movement);
-      if (this.followTransition) {
-        const offset =
-          this.mode === 'iso'
-            ? new THREE.Vector3(100, 110, 125)
-            : new THREE.Vector3(15, 10, 19);
-        const goal = target.clone().add(offset);
-        this.camera.position.lerp(goal, 1 - Math.exp(-delta * 4));
-        if (this.camera.position.distanceTo(goal) < 0.25)
-          this.followTransition = false;
-      } else this.camera.position.add(movement);
+      this.followCamera.update(
+        this.camera,
+        this.controls.target,
+        subject,
+        delta,
+      );
     }
     this.controls.update();
     this.camera.position.y = Math.max(
@@ -1039,20 +1038,27 @@ export class RailwayWorld {
     };
   }
   private placeTrackside() {
-    const train = this.trains[this.selected];
+    if (!this.sim.visible(this.sim.trains[this.selected])) return;
+    const { p, angle } = this.sim.vehiclePosition(
+      this.sim.trains[this.selected],
+      0,
+    );
     const offset = new THREE.Vector3(8, 3, -12).applyAxisAngle(
       new THREE.Vector3(0, 1, 0),
-      train.rotation.y,
+      angle,
     );
-    this.camera.position.copy(train.position).add(offset);
+    this.camera.position.set(p.x, p.y, p.z).add(offset);
   }
   setTrackside() {
+    const subject = trainCameraTarget(this.sim, this.selected);
+    if (!subject) return false;
     this.setMode('3d');
     this.following = false;
     this.trackside = true;
-    this.followTransition = false;
+    this.followCamera.preserveView();
     this.placeTrackside();
-    this.controls.target.copy(this.trains[this.selected].position);
+    this.controls.target.copy(subject);
+    return true;
   }
   capturePhoto() {
     this.renderer.render(this.scene, this.camera);
@@ -1074,7 +1080,7 @@ export class RailwayWorld {
     this.controls.dispose();
     this.mode = mode;
     this.trackside = false;
-    this.followTransition = false;
+    this.followCamera.preserveView();
     if (mode === 'iso') {
       this.camera = new THREE.OrthographicCamera(-90, 90, 90, -90, 0.1, 1800);
       this.camera.position
@@ -1105,18 +1111,15 @@ export class RailwayWorld {
     this.resize();
   }
   follow(id: number) {
+    if (!this.sim.trains[id]) return;
     this.selected = id;
     this.following = true;
     this.trackside = false;
-    this.followTransition = true;
-    if (this.camera instanceof THREE.OrthographicCamera) {
-      this.camera.zoom = Math.min(48, this.camera.top / 17.2);
-      this.camera.updateProjectionMatrix();
-    }
+    this.followCamera.request();
   }
   overview() {
     this.trackside = false;
-    this.followTransition = false;
+    this.followCamera.preserveView();
     this.following = false;
     this.controls.target.set(0, 0, -7);
     this.camera.position.set(140 * MAP_SCALE, 155 * MAP_SCALE, 175 * MAP_SCALE);

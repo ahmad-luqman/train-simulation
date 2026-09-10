@@ -27,7 +27,7 @@ npm start          # Preview the production Worker locally
 
 - Select any of twelve steam locomotives from the roster or click its model.
 - Choose **3D** for orbit controls or **Iso** for an orthographic view.
-- **Follow train** follows the selected locomotive in either mode.
+- **Follow train** follows the selected locomotive in either mode. A queued locomotive shows **Follow when dispatched**: the camera keeps its current view until the train enters a physical berth, then follows it automatically with a smooth zoom. Trackside requires a visible locomotive.
 - Drag to pan in Iso; drag to orbit and right-drag to pan in 3D. Scroll or pinch to zoom.
 - Use **Hold / Release** to dispatch individual trains. Physical blocks and junction movements protect the complete consist.
 - Deliver real passengers and freight into destination demand to earn the displayed tariff. Spend $8,500 on an additional wagon at a station while operating forward, up to six cars per train. Its cargo family follows the service configuration, and the longer consist needs a clear approach.

@@ -57,7 +57,7 @@ export function registerRailwayTools(
     {
       name: 'follow_train',
       description:
-        'Select a locomotive and move the visible camera to follow it.',
+        'Follow a visible locomotive, or wait in the current view until a queued locomotive is dispatched.',
       inputSchema: {
         type: 'object',
         properties: { trainId: { type: 'integer', minimum: 0, maximum: 11 } },
@@ -71,7 +71,11 @@ export function registerRailwayTools(
         await new Promise<void>((resolve) =>
           requestAnimationFrame(() => resolve()),
         );
-        return { following: id, name: locomotives[id].name };
+        return {
+          following: id,
+          name: locomotives[id].name,
+          waitingForDispatch: !sim.visible(sim.trains[id]),
+        };
       },
     },
     {
