@@ -22,6 +22,7 @@ export type PhysicalMotion = {
   queued: boolean;
   requestedCrossover?: string;
   berth?: string;
+  berthReverse?: boolean;
   route?: PhysicalRoute;
   at: number;
   stopTarget: number;
@@ -35,6 +36,7 @@ export type PhysicalMotion = {
 };
 export const newPhysicalMotion = (): PhysicalMotion => ({
   queued: true,
+  berthReverse: false,
   at: 0,
   stopTarget: 0,
   blockers: [],
@@ -48,12 +50,43 @@ const FRONT = 3;
 export class Traffic {
   private paths = new WeakMap<PhysicalRoute, RouteInterval[]>();
   private tickIndex = new OccupancyIndex();
+  private pendingApproach?: { train: number; resources: Set<string> };
   constructor(readonly sim: Simulation) {}
   get topology() {
     return this.sim.topology;
   }
   beginTick() {
     this.tickIndex = new OccupancyIndex(this.allEnvelopes());
+    // Drain only the exact movement requested by an older approaching train.
+    // Already admitted trains keep their authority and can finish, avoiding a
+    // stream of new departures repeatedly pre-empting one atomic arrival grant.
+    const waiting = this.sim.trains
+      .filter(
+        (t) =>
+          !t.held &&
+          t.motion.physical.route &&
+          t.motion.wait?.kind === 'junction' &&
+          t.motion.waitingSince !== null &&
+          this.sim.elapsed - t.motion.waitingSince >= 30,
+      )
+      .sort(
+        (a, b) =>
+          a.motion.physical.lastCallAt - b.motion.physical.lastCallAt ||
+          a.id - b.id,
+      );
+    const next = waiting[0];
+    this.pendingApproach = next
+      ? {
+          train: next.id,
+          resources: new Set(
+            this.group(
+              next,
+              next.motion.physical.route!,
+              next.motion.physical.at,
+            ).map((i) => i.resource),
+          ),
+        }
+      : undefined;
   }
 
   visible(t: TrainState) {
@@ -70,7 +103,7 @@ export class Traffic {
     const pose = p.route
       ? this.topology.pose(p.route.sections, at - behind)
       : this.topology.pose(
-          [{ section: p.berth!, reverse: false }],
+          [{ section: p.berth!, reverse: p.berthReverse ?? false }],
           BERTH_STOP - behind,
         );
     if (m.reversed) pose.angle += Math.PI;
@@ -107,9 +140,15 @@ export class Traffic {
     }
     return list;
   }
-  private occupiedBerth(t: TrainState, berth: string): RouteInterval[] {
+  private occupiedBerth(
+    t: TrainState,
+    berth: string,
+    reverse = berth === t.motion.physical.berth
+      ? (t.motion.physical.berthReverse ?? false)
+      : false,
+  ): RouteInterval[] {
     return this.topology
-      .intervals([{ section: berth, reverse: false }])
+      .intervals([{ section: berth, reverse }])
       .filter(
         (i) =>
           i.end >= BERTH_STOP - consistLength(t.cars) - FRONT &&
@@ -171,6 +210,7 @@ export class Traffic {
         continue;
       p.queued = false;
       p.berth = berth;
+      p.berthReverse = false;
       p.at = 0;
       t.motion.reversed = false;
       this.holdBerth(t);
@@ -370,9 +410,11 @@ export class Traffic {
           progress = true;
           const standing = new Set([
             `platform:${state.route.destination}`,
-            ...this.occupiedBerth(state.train, state.route.destination).map(
-              (i) => i.resource,
-            ),
+            ...this.occupiedBerth(
+              state.train,
+              state.route.destination,
+              state.route.sections.at(-1)!.reverse,
+            ).map((i) => i.resource),
           ]);
           for (const [resource, owner] of owners)
             if (owner === state.train.id && !standing.has(resource))
@@ -425,7 +467,9 @@ export class Traffic {
             stop: true,
             ...(crossover ? { crossover } : {}),
           };
-          const at = BERTH_LENGTH - BERTH_STOP + consistLength(t.cars);
+          const at = p.berthReverse
+            ? BERTH_LENGTH - BERTH_STOP + consistLength(t.cars)
+            : BERTH_STOP;
           const required = [
             ...this.intervals(route)
               .filter((i) => i.resource.startsWith('block:'))
@@ -434,6 +478,14 @@ export class Traffic {
             ...this.occupiedBerth(t, destination).map((i) => i.resource),
             ...this.group(t, route, at).map((i) => i.resource),
           ];
+          if (
+            this.pendingApproach &&
+            required.some((r) => this.pendingApproach!.resources.has(r))
+          ) {
+            blockedKind = 'capacity';
+            detail = `Clearing the approach for ${locomotives[this.pendingApproach.train].name}. Existing journeys may finish.`;
+            continue;
+          }
           const owners = this.blockers(t, required);
           if (owners.length) {
             owners.forEach((id) => allOwners.add(id));
@@ -478,7 +530,7 @@ export class Traffic {
           p.at = at;
           p.stopTarget = this.topology.length(sections) - FRONT;
           p.blockers = [];
-          t.motion.reversed = !t.motion.reversed;
+          t.motion.reversed = false;
           t.motion.started = true;
           t.distance = 0.000001;
           for (const i of this.intervals(route).filter((i) =>
@@ -768,6 +820,7 @@ export class Traffic {
       (r) => r.owner !== t.id,
     );
     p.berth = route.destination;
+    p.berthReverse = route.sections.at(-1)!.reverse;
     delete p.route;
     p.at = 0;
     p.retryAt = 0;
@@ -876,7 +929,11 @@ export class Traffic {
     const group = this.group(t, route, at),
       required = [
         `platform:${route.destination}`,
-        ...this.occupiedBerth(t, route.destination).map((i) => i.resource),
+        ...this.occupiedBerth(
+          t,
+          route.destination,
+          route.sections.at(-1)!.reverse,
+        ).map((i) => i.resource),
         ...this.intervals(route)
           .filter(
             (i) =>
@@ -1009,6 +1066,7 @@ export class Traffic {
       if (
         !p ||
         typeof p.queued !== 'boolean' ||
+        (p.berthReverse !== undefined && typeof p.berthReverse !== 'boolean') ||
         ![
           p.at,
           p.stopTarget,
@@ -1030,6 +1088,7 @@ export class Traffic {
       if (p.queued) {
         if (
           p.berth ||
+          p.berthReverse ||
           p.route ||
           t.motion.started ||
           t.distance !== 0 ||
@@ -1082,6 +1141,8 @@ export class Traffic {
           throw new Error('Movement protection expires before rear clearance.');
       }
       if (r) {
+        if (t.motion.reversed !== !!r.recovering)
+          throw new Error('Invalid leading-end orientation for this route.');
         if (
           p.stopTarget > this.topology.length(r.sections) - FRONT + 1e-7 ||
           p.stopTarget < p.at - 1e-7 ||
@@ -1179,6 +1240,7 @@ export class Traffic {
       } else {
         if (
           t.motion.started ||
+          t.motion.reversed !== (p.berthReverse ?? false) ||
           p.at !== 0 ||
           !this.sim.network.stations
             .find((s) => s.node === this.sim.endpoints(t)[0])

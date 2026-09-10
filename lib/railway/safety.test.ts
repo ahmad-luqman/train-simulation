@@ -86,6 +86,12 @@ void test('R1: all twelve simultaneous services deliver in 1800 seconds and cont
   for (let i = 0; i < 36000; i++) {
     s.step(0.05);
     assertSeparated(s);
+    for (const train of s.trains)
+      if (
+        train.motion.physical.route &&
+        !train.motion.physical.route.recovering
+      )
+        assert.equal(train.motion.reversed, false);
     maximumMoving = Math.max(
       maximumMoving,
       s.trains.filter((t) => t.motion.velocity > 0).length,
@@ -140,7 +146,7 @@ void test('C2: audited main/loop same-direction arrival remains separated with a
     s.trains[id].motion.departureDue = 0;
   }
   s.trains[7].stopAtStation = true;
-  for (let i = 0; i < 12000; i++) {
+  for (let i = 0; i < 24000; i++) {
     s.step(0.05);
     assertSeparated(s);
   }
@@ -172,7 +178,7 @@ void test('swept collision backstop catches translation and rotation tunnelling 
     false,
   );
 });
-void test('P1: v4 geometric overlap and missing/falsified authority fail without changing live state', () => {
+void test('P1: v5 geometric overlap and missing/falsified authority fail without changing live state', () => {
   const s = isolated();
   advance(s, 35);
   const before = JSON.stringify(s.save());
@@ -208,23 +214,25 @@ void test('a held conflict stops approaches at their physical braking target at 
   for (const speed of [1, 3, 8]) {
     const s = isolated(),
       t = s.trains[0];
-    until(
-      s,
-      () => t.motion.physical.route !== undefined && t.motion.velocity > 1,
-    );
-    const p = t.motion.physical,
-      r = p.route!,
+    let future: { resource: string; start: number; end: number } | undefined;
+    until(s, () => {
+      const p = t.motion.physical;
+      if (!p.route || t.motion.velocity < 1) return false;
       future = s.topology
-        .intervals(r.sections)
+        .intervals(p.route.sections)
         .find(
           (i) =>
             i.resource.startsWith('zone:') &&
-            i.start > p.at + 20 &&
-            !s.dispatch.reservations.some((res) => res.resource === i.resource),
+            i.start > p.at + 25 &&
+            i.start < p.at + 60 &&
+            !s.dispatch.reservations.some((r) => r.resource === i.resource),
         );
+      return !!future;
+    });
+    const p = t.motion.physical;
     assert.ok(future, 'Scenario needs an ungranted downstream movement');
     s.dispatch.reservations.push({
-      resource: future.resource,
+      resource: future!.resource,
       owner: 1,
       releaseAt: null,
     });
@@ -235,7 +243,7 @@ void test('a held conflict stops approaches at their physical braking target at 
       s.step(0.05);
       if (t.motion.velocity < previous) braked = true;
       previous = t.motion.velocity;
-      assert.ok(p.at < future.start - 2.9);
+      assert.ok(p.at < future!.start - 2.9);
       assertSeparated(s);
     }
     assert.ok(braked && t.motion.velocity < 0.01);
@@ -243,7 +251,7 @@ void test('a held conflict stops approaches at their physical braking target at 
   }
 });
 
-void test('independent sub-tick sampling covers every vehicle through opposing loop movements and long-train reversals', () => {
+void test('independent sub-tick sampling covers every vehicle through opposing loop movements and long-train return loops', () => {
   for (const speed of [1, 3, 8]) {
     const s = isolated();
     s.trains[0].held = true;
@@ -272,7 +280,7 @@ void test('independent sub-tick sampling covers every vehicle through opposing l
       s.trains[id].motion.departureDue = 0;
     }
     s.speed = speed;
-    for (let i = 0; i < 6500; i++) stepAndAssertSweep(s);
+    for (let i = 0; i < 18000; i++) stepAndAssertSweep(s);
     assert.ok(s.trains[1].motion.calls >= 1 && s.trains[7].motion.calls >= 1);
     assert.equal(
       s.trains[1].motion.physical.emergencies +

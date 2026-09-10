@@ -1,3 +1,4 @@
+import { MAP } from './map';
 import {
   distance,
   measure,
@@ -230,6 +231,38 @@ function tangentArcs(
     throw new Error('No continuous turnout alignment fits these ports.');
   return best;
 }
+// A fan of nested half-circles turns each complete consist without uncoupling.
+// All lanes merge into the outside return road, beyond parked vehicle envelopes.
+export const RETURN_OFFSET = -44;
+export function departurePoints(
+  n: Point,
+  angle: number,
+  lead: number,
+  lane: number,
+) {
+  const dir = { x: Math.cos(angle), y: 0, z: Math.sin(angle) },
+    normal = { x: -dir.z, y: 0, z: dir.x };
+  const offset = (lane - 1.5) * LINE_SPACING,
+    radius = (offset - RETURN_OFFSET) / 2;
+  const local = (along: number, across: number) =>
+    shift(shift(n, dir, along), normal, across);
+  const points = Array.from(
+    { length: Math.ceil((Math.PI * radius) / 0.25) + 1 },
+    (_, i) => i,
+  );
+  const arc = points.map((_, i) => {
+    const theta = (Math.PI * i) / (points.length - 1);
+    return local(
+      lead + BERTH_LENGTH + radius * Math.sin(theta),
+      offset - radius + radius * Math.cos(theta),
+    );
+  });
+  const start = lead + BERTH_LENGTH;
+  for (let along = start - 1; along > 0; along--)
+    arc.push(local(along, RETURN_OFFSET));
+  arc.push(local(0, RETURN_OFFSET));
+  return arc;
+}
 export const MAX_PLATFORMS = 4;
 export function chooseYard(
   network: RailNetwork,
@@ -270,7 +303,10 @@ export function chooseYard(
             normal,
             (lane - 1.5) * LINE_SPACING,
           );
-          if (Math.max(Math.abs(p.x), Math.abs(p.z)) > 138) {
+          if (
+            Math.abs(p.x) > MAP.halfWidth - 10 ||
+            Math.abs(p.z) > MAP.halfDepth - 10
+          ) {
             clearance = -1;
             break scan;
           }
@@ -395,17 +431,69 @@ export class Topology {
         });
       });
     }
+    for (const station of network.stations) {
+      const n = network.nodes.find((n) => n.id === station.node)!,
+        angle = station.yardAngle!;
+      const exit = `yard-exit:${station.node}`;
+      const entry = `yard-entry:${station.node}`;
+      const dir = { x: Math.cos(angle), y: 0, z: Math.sin(angle) };
+      const throat = shift(n, dir, (station.yardLead ?? 17) - 24);
+      for (const platform of station.platforms) {
+        const id = `arrival:${platform}`,
+          mouth = this.sections.get(platform)!.points[0];
+        this.sections.set(
+          id,
+          section(
+            id,
+            'turnout',
+            cubic(throat, mouth, dir, dir),
+            entry,
+            `${platform}:a`,
+            { node: station.node },
+          ),
+        );
+        this.ports.set(entry, {
+          id: entry,
+          node: station.node,
+          section: id,
+          end: 'a',
+          p: throat,
+          outward: dir,
+        });
+      }
+
+      for (const [lane, platform] of station.platforms.entries()) {
+        const points = departurePoints(n, angle, station.yardLead ?? 17, lane),
+          id = `departure:${platform}`;
+        points[0] = { ...this.sections.get(platform)!.points.at(-1)! };
+        this.sections.set(
+          id,
+          section(id, 'turnout', points, `${platform}:b`, exit, {
+            node: station.node,
+          }),
+        );
+        this.ports.set(exit, {
+          id: exit,
+          node: station.node,
+          section: id,
+          end: 'b',
+          p: points.at(-1)!,
+          outward: { x: Math.cos(angle), y: 0, z: Math.sin(angle) },
+        });
+      }
+    }
     // Each legal transition is an actual sampled path between named ports.
     // Platform-to-platform shunts and running-line U-turns are not implicit edges.
     for (const n of network.nodes) {
-      const ports = [...this.ports.values()].filter((p) => p.node === n.id);
+      const ports = [...this.ports.values()].filter(
+        (p) =>
+          p.node === n.id && this.sections.get(p.section)!.kind !== 'platform',
+      );
       for (let i = 0; i < ports.length; i++)
         for (let j = i + 1; j < ports.length; j++) {
           const a = ports[i],
-            b = ports[j],
-            sa = this.sections.get(a.section)!,
-            sb = this.sections.get(b.section)!;
-          if (sa.kind === 'platform' && sb.kind === 'platform') continue;
+            b = ports[j];
+          if (a.id.startsWith('yard-') && b.id.startsWith('yard-')) continue;
           const id = `turnout:${a.id}>${b.id}`;
           const points = cubic(
             a.p,
@@ -447,8 +535,14 @@ export class Topology {
     legs: RouteLeg[],
   ): Traversal[] | undefined {
     const route: Traversal[] = [];
-    let port = source ? `${source}:a` : undefined;
-    if (source) route.push({ section: source, reverse: true });
+    let port = source
+      ? `yard-exit:${this.sections.get(source)!.node}`
+      : undefined;
+    if (source)
+      route.push(
+        { section: source, reverse: false },
+        { section: `departure:${source}`, reverse: false },
+      );
     for (const leg of legs) {
       const e = this.network.edges.find((e) => e.id === leg.edge)!;
       if (
@@ -474,9 +568,16 @@ export class Topology {
       port = end;
     }
     if (!port) return undefined;
-    const last = this.movement(port, `${destination}:a`);
+    const last = this.movement(
+      port,
+      `yard-entry:${this.sections.get(destination)!.node}`,
+    );
     if (!last) return undefined;
-    route.push(last, { section: destination, reverse: false });
+    route.push(
+      last,
+      { section: `arrival:${destination}`, reverse: false },
+      { section: destination, reverse: false },
+    );
     return route;
   }
   crossoverRoute(
@@ -504,21 +605,23 @@ export class Topology {
     const first = reverse ? parallel : main,
       last = reverse ? main : parallel;
     const entry = this.movement(
-        `${source}:a`,
+        `yard-exit:${this.sections.get(source)!.node}`,
         `${first.id}:${reverse ? 'b' : 'a'}`,
       ),
       exit = this.movement(
         `${last.id}:${reverse ? 'a' : 'b'}`,
-        `${destination}:a`,
+        `yard-entry:${this.sections.get(destination)!.node}`,
       );
     if (!entry || !exit) return undefined;
     return [
-      { section: source, reverse: true },
+      { section: source, reverse: false },
+      { section: `departure:${source}`, reverse: false },
       entry,
       { section: `${first.id}:part${reverse ? 1 : 0}`, reverse },
       { section: id, reverse },
       { section: `${last.id}:part${reverse ? 0 : 1}`, reverse },
       exit,
+      { section: `arrival:${destination}`, reverse: false },
       { section: destination, reverse: false },
     ];
   }

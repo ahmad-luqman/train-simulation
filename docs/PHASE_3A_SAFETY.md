@@ -1,5 +1,7 @@
 # Phase 3A implementation and acceptance
 
+These notes record the `ba7eccf` milestone. The subsequent [expanded valley](EXPANDED_VALLEY.md) replaces dead-end platform departures with locomotive-leading return loops, adds a larger map and central platform, and uses v5 saves. The audit fixtures and safety invariants remain in the regression suite.
+
 The starting revision is `aedde16`; its runtime is the audited `b1c2d05`.
 The compressed fixtures in `lib/railway/fixtures` preserve the exact initial
 state and the main/loop collision at 32.65 seconds before runtime changes.

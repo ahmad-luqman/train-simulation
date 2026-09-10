@@ -52,9 +52,9 @@ npm start          # Preview the production Worker locally
 
 ## World and simulation
 
-Eight towns connect through thirteen curved rail corridors. Procedural geometry supplies terrain, forests, houses, factories, stations, farms, signals, a winding river, bridge decks, locomotives, tenders, and coaches. Wheel animation and fading smoke run in Three.js. Forests and sleepers use instanced meshes; low graphics mode reduces resolution and disables shadows.
+Eight towns span an expanded valley with 5.76 times the previous buildable area, connected by thirteen longer curved rail corridors. Procedural geometry supplies terrain, forests, houses, factories, stations, farms, signals, a winding river, bridge decks, locomotives, tenders, and coaches. Wheel animation and fading smoke run in Three.js. Forests and sleepers use instanced meshes; low graphics mode reduces resolution and disables shadows.
 
-The simulation uses fixed 50 ms ticks, physical running lines, connected turnout paths and separate station sidings. Trains wait explicitly off-network until an entire consist can enter a clear berth. Geometry-derived conflict zones, atomic route admission, full-rear clearance and an independent swept collision backstop protect movement. Three physical platforms per starter station provide safe storage. Automatic routing preserves ordered service calls and explicit track preferences, considers occupied alternate routes, and reserves a reachable destination platform before departure.
+The simulation uses fixed 50 ms ticks, physical running lines, connected turnout paths and separate through-platform tracks. Trains wait explicitly off-network until an entire consist can enter a clear berth. Geometry-derived conflict zones, atomic route admission, full-rear clearance and an independent swept collision backstop protect movement. Shared station throats serve three through platforms per town and four at Grand Junction. Physical return loops keep the locomotive leading on normal services. Automatic routing preserves ordered service calls and explicit track preferences, considers occupied alternate routes, and reserves a reachable destination platform before departure.
 
 Acceleration, load-dependent mass, grade resistance, curve limits and advance braking determine actual speed. Geometry and physics use the same scene units; one unit represents 50/9 metres, and displayed construction distances and speeds use that conversion. Physical station approaches add real journey time: the default railway is congested, and individual calls can take considerably longer than isolated runs. Holds retain occupied protection; impossible capacity or direction constraints require a player change. One block per running edge remains the rule. Tunnels, arbitrary mid-track turnouts, locomotive run-arounds, multiplayer and realistic steam thermodynamics remain outside this phase.
 
@@ -64,8 +64,9 @@ The Alpine Monarch showcase locomotive and tender use three embedded-material GL
 
 - `lib/railway/data.ts`: cities, corridors, and locomotive definitions.
 - `lib/railway/network.ts`, `terrain.ts`: stable network records, shared sampled geometry, costs, clearance and route planning.
-- `lib/railway/simulation.ts`: fixed ticks, construction commands, services, economics, resource ownership, undo and validated version 4 saves.
-- `lib/railway/topology.ts`: physical ports, station paths, turnouts, crossovers and geometry-derived conflicts.
+- `lib/railway/simulation.ts`: fixed ticks, construction commands, services, economics, resource ownership, undo and validated version 5 saves.
+- `lib/railway/map.ts`: shared world, construction and camera extents.
+- `lib/railway/topology.ts`: physical ports, shared station throats, through platforms, return loops, crossovers and geometry-derived conflicts.
 - `lib/railway/traffic.ts`: route admission, movement authority, fair retries, safe recovery and physical restore validation.
 - `lib/railway/safety.ts`, `model-envelope.ts`: shared vehicle envelopes, spatial index, swept collision checks and model bounds.
 - `lib/railway/dispatch.ts`, `units.ts`: traction/braking, schedules, circular-wait detection and the shared distance scale.
@@ -85,12 +86,14 @@ The generated Shadcn/Base UI catalog is retained and composed by the app. Its ex
 
 ## Validation
 
-The corrective [Phase 3A implementation](docs/PHASE_3A_SAFETY.md) addresses the [preserved Phase 3 audit cases](docs/PHASE_3_COLLISION_AUDIT.md). Automated tests cover independent geometric separation for every vehicle, sub-tick motion at 1×/3×/8×, physical parallel/crossover movement, six-car reversal, construction, model dimensions, corrupt saves, all twelve services over 1,800 seconds plus a second 1,800-second continuation, and fleet recovery after a held-train disruption. The separate benchmark records headless simulation timings in [the measured result](docs/benchmarks/phase3a.json).
+The corrective [Phase 3A implementation](docs/PHASE_3A_SAFETY.md) addresses the [preserved Phase 3 audit cases](docs/PHASE_3_COLLISION_AUDIT.md). Automated tests cover independent geometric separation for every vehicle, sub-tick motion at 1×/3×/8×, physical parallel/crossover movement, six-car reversal, construction, model dimensions, corrupt saves, all twelve services over 1,800 seconds plus a second 1,800-second continuation, and fleet recovery after a held-train disruption. The separate benchmark records headless simulation timings in [the current measured result](docs/benchmarks/expanded-valley.json).
 
 Browser interaction, WebGL visual acceptance, accessibility and the Phase 0 GPU baseline remain open. Headless tests and timings do not certify those checks.
 Optional WebMCP tools (`get_railway_state`, `follow_train`, `set_train_hold`) are registered only when `document.modelContext` is available. No supported browser validation context was available during this implementation, so these experimental integrations have not been verified end to end. Unsupported browsers run the normal interface unchanged.
 
-Version 4 saves persist physical berths, depot queues, operational routes and authority. Load searches v4, then the preserved v3/v2/v1 slots. Older formats cannot describe these physical positions and are rejected atomically with an explanation; no legacy trains are silently relocated. New railway preserves every saved slot. Current saves restore only after detached geometry, ownership, braking and service-order validation.
+Version 5 saves persist the expanded world, through-platform orientation, depot queues, operational routes and authority. Load searches v5, then the preserved v4/v3/v2/v1 slots. Older layouts are rejected atomically with an explanation; no legacy trains are silently relocated or stretched onto the larger map. Start a new railway to use this layout. New railway preserves every saved slot. Current saves restore only after detached geometry, ownership, braking and service-order validation.
+
+See [expanded valley and station notes](docs/EXPANDED_VALLEY.md) for the map redesign and locomotive-leading operation.
 
 See [Phase 3A safety notes](docs/PHASE_3A_SAFETY.md) for the current implementation plan, operating rules, regression coverage and remaining acceptance checks. [Phase 3 dispatch notes](docs/PHASE_3_DISPATCH.md) preserve the earlier implementation history.
 

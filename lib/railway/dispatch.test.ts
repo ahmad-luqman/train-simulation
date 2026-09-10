@@ -107,7 +107,7 @@ void test('opposing trains automatically choose a purchased passing loop with si
   shuttle(s, 7, 2, 1, '1-2', false);
   let together = false,
     usedLoop = false;
-  for (let i = 0; i < 12000; i++) {
+  for (let i = 0; i < 24000; i++) {
     s.step(0.05);
     assertSeparated(s);
     const resources = s.dispatch.reservations.map((r) => r.resource);
@@ -124,7 +124,7 @@ void test('opposing trains automatically choose a purchased passing loop with si
   restored.restore(s.save());
   sameSave(s, restored);
 });
-void test('terminal departure reverses in place and preserves every vehicle pose, including a six-car final wagon', () => {
+void test('terminal departure keeps the locomotive leading through a physical return loop and preserves all six-car poses', () => {
   const s = isolated(),
     t = s.trains[0];
   t.cars = 6;
@@ -132,12 +132,16 @@ void test('terminal departure reverses in place and preserves every vehicle pose
   t.stopAtStation = true;
   until(s, () => t.held);
   const before = poses(s, 0),
-    reversed = t.motion.reversed,
     berth = t.motion.physical.berth;
   t.held = false;
   t.dwell = 0;
   until(s, () => t.motion.started);
-  assert.equal(t.motion.reversed, !reversed);
+  assert.equal(t.motion.reversed, false);
+  assert.ok(
+    t.motion.physical.route!.sections.some(
+      (part) => part.section === `departure:${berth}`,
+    ),
+  );
   samePoses(before, poses(s, 0));
   assert.ok(
     s.dispatch.reservations.some(
@@ -354,12 +358,12 @@ void test('station schedules survive edits and one-way planning finds a permitte
   assert.ok(service.legs.some((l) => l.edge === '0-1' && l.from === 0));
   assert.ok(!service.legs.some((l) => l.edge === '0-1' && l.from === 1));
 });
-void test('save/load across acceleration, turnouts, six-car arrival and reversals matches uninterrupted operation', () => {
+void test('save/load across acceleration, turnouts, six-car arrivals and return loops matches uninterrupted operation', () => {
   const s = isolated(),
     t = s.trains[0];
   shuttle(s, 0, 0, 1, '0-1');
   t.cars = 6;
-  for (let i = 0; i < 10000; i++) {
+  for (let i = 0; i < 18000; i++) {
     s.step(0.05);
     assertSeparated(s);
     if (i % 137 !== 0) continue;

@@ -1,3 +1,4 @@
+import { MAP, MAP_SCALE } from './map';
 import { vehicles } from './safety';
 import { sample } from './topology';
 import * as THREE from 'three';
@@ -112,17 +113,17 @@ export class RailwayWorld {
     this.sunlight.castShadow = true;
     const sh = this.sunlight.shadow;
     sh.mapSize.set(2048, 2048);
-    sh.camera.left = -130;
-    sh.camera.right = 130;
-    sh.camera.top = 130;
-    sh.camera.bottom = -130;
-    sh.camera.far = 300;
+    sh.camera.left = -MAP.halfWidth;
+    sh.camera.right = MAP.halfWidth;
+    sh.camera.top = MAP.halfDepth;
+    sh.camera.bottom = -MAP.halfDepth;
+    sh.camera.far = 1200;
     sh.normalBias = 0.2;
     sh.bias = -0.0002;
     this.scene.add(this.sunlight);
     this.atmosphere = new Atmosphere(this.scene, this.sunlight, this.renderer);
-    this.camera = new THREE.OrthographicCamera(-90, 90, 90, -90, 0.1, 800);
-    this.camera.position.set(140, 155, 175);
+    this.camera = new THREE.OrthographicCamera(-90, 90, 90, -90, 0.1, 1800);
+    this.camera.position.set(140 * MAP_SCALE, 155 * MAP_SCALE, 175 * MAP_SCALE);
     this.controls = this.makeControls();
     this.controls.target.set(0, 0, -7);
     this.controls.update();
@@ -213,9 +214,9 @@ export class RailwayWorld {
     c.enableDamping = true;
     c.dampingFactor = 0.08;
     c.minDistance = 10;
-    c.maxDistance = 320;
+    c.maxDistance = 1000;
     c.minZoom = 0.55;
-    c.maxZoom = 9;
+    c.maxZoom = 48;
     c.maxPolarAngle = Math.PI * 0.47;
     c.screenSpacePanning = false;
     c.enableRotate = this.mode === '3d';
@@ -225,7 +226,12 @@ export class RailwayWorld {
     return c;
   }
   private terrain() {
-    const geo = new THREE.PlaneGeometry(290, 290, 180, 180);
+    const geo = new THREE.PlaneGeometry(
+      MAP.halfWidth * 2,
+      MAP.halfDepth * 2,
+      240,
+      224,
+    );
     geo.rotateX(-Math.PI / 2);
     const pos = geo.attributes.position;
     const colors = [];
@@ -260,8 +266,26 @@ export class RailwayWorld {
     const ground = new THREE.Mesh(geo, terrainMaterial());
     ground.receiveShadow = true;
     this.scene.add(ground);
-    box(this.scene, '#ac9976', 0, -3.1, 0, 190, 3, 180);
-    box(this.scene, '#d5ccb7', 0, -5, 0, 190, 0.8, 180);
+    box(
+      this.scene,
+      '#ac9976',
+      0,
+      -3.1,
+      0,
+      MAP.halfWidth * 2,
+      3,
+      MAP.halfDepth * 2,
+    );
+    box(
+      this.scene,
+      '#d5ccb7',
+      0,
+      -5,
+      0,
+      MAP.halfWidth * 2,
+      0.8,
+      MAP.halfDepth * 2,
+    );
     const floor = new THREE.Mesh(
       new THREE.PlaneGeometry(3000, 3000),
       material('#cbd5d4'),
@@ -326,22 +350,29 @@ export class RailwayWorld {
     this.nature();
     for (const station of this.sim.network.stations) {
       const node = this.sim.network.nodes.find((n) => n.id === station.node)!;
+      const angle = station.yardAngle!,
+        lead = station.yardLead ?? 17;
+      const hall = new THREE.Group();
+      hall.position.set(
+        node.x + Math.cos(angle) * (lead + 25) - Math.sin(angle) * 28,
+        node.y - 0.36,
+        node.z + Math.sin(angle) * (lead + 25) + Math.cos(angle) * 28,
+      );
+      hall.rotation.y = -angle;
+      stationKit(
+        hall,
+        {
+          id: station.id,
+          name: station.name,
+          cargo: node.cargo,
+          x: 0,
+          z: 4,
+          color: cities[station.node]?.color ?? '#b78065',
+        },
+        station.node === 4,
+      );
+      this.sceneryGroup.add(hall);
       if (station.built) {
-        const g = new THREE.Group();
-        g.position.y = node.y - 0.36;
-        stationKit(
-          g,
-          {
-            id: station.id,
-            name: station.name,
-            cargo: node.cargo,
-            x: node.x,
-            z: node.z,
-            color: '#b78065',
-          },
-          false,
-        );
-        this.sceneryGroup.add(g);
         const el = document.createElement('div');
         el.className = 'city-label';
         const title = document.createElement('strong');
@@ -363,7 +394,10 @@ export class RailwayWorld {
         g.position.set(pose.p.x, pose.p.y, pose.p.z);
         g.rotation.y = pose.angle;
         box(g, '#c4b99b', 3, -0.1, 0, 1.5, 0.5, path.length);
-        box(g, '#b66745', 0, 0.5, -path.length / 2 - 1, 2, 0.3, 0.3);
+        // Open at both ends: the exit leads into a physical return loop.
+        box(g, '#526962', 3, 2.8, 0, 1.9, 0.16, 20);
+        for (const z of [-9, 0, 9])
+          box(g, '#43564f', 3.4, 1.3, z, 0.12, 2.6, 0.12);
         this.railGroup.add(g);
       }
     }
@@ -587,11 +621,6 @@ export class RailwayWorld {
       }
       box(urban, '#b7b39a', city.x, 0, city.z + 4, 20, 0.07, 1.25);
       box(urban, '#b7b39a', city.x - 2, 0.01, city.z + 10, 1.2, 0.08, 13);
-      stationKit(
-        urban,
-        index === 6 ? { ...city, x: city.x + 8 } : city,
-        index === 4,
-      );
       industryKit(
         urban,
         index === 6 ? { ...city, x: city.x + 18 } : city,
@@ -637,9 +666,9 @@ export class RailwayWorld {
   private nature() {
     const random = rng(731);
     const positions: { x: number; y: number; z: number; s: number }[] = [];
-    for (let i = 0; i < 1600; i++) {
-      const x = random() * 184 - 92,
-        z = random() * 174 - 87;
+    for (let i = 0; i < 3600; i++) {
+      const x = (random() * 184 - 92) * MAP_SCALE,
+        z = (random() * 174 - 87) * MAP_SCALE;
       if (
         !this.sceneryClear(x, z, 3) ||
         cities.some((c) => Math.hypot(x - c.x, z - c.z) < 17) ||
@@ -693,8 +722,8 @@ export class RailwayWorld {
     const rockGeo = new THREE.IcosahedronGeometry(1, 0);
     const rocks = new THREE.InstancedMesh(rockGeo, material('#939789'), 100);
     for (let i = 0; i < 100; i++) {
-      const x = random() * 180 - 90,
-        z = -68 - random() * 19;
+      const x = (random() * 180 - 90) * MAP_SCALE,
+        z = (-68 - random() * 19) * MAP_SCALE;
       o.position.set(x, height(x, z), z);
       o.scale.set(1 + random() * 1.5, 0.8 + random(), 1 + random());
       o.rotation.set(random(), random(), random());
@@ -922,8 +951,16 @@ export class RailwayWorld {
     this.camera.position.y = Math.max(
       this.camera.position.y,
       height(
-        THREE.MathUtils.clamp(this.camera.position.x, -95, 95),
-        THREE.MathUtils.clamp(this.camera.position.z, -90, 90),
+        THREE.MathUtils.clamp(
+          this.camera.position.x,
+          -MAP.halfWidth,
+          MAP.halfWidth,
+        ),
+        THREE.MathUtils.clamp(
+          this.camera.position.z,
+          -MAP.halfDepth,
+          MAP.halfDepth,
+        ),
       ) + 2.5,
     );
     this.updateShowcase();
@@ -1021,7 +1058,7 @@ export class RailwayWorld {
     // Preserve the apparent scale when switching projection, including a close follow view.
     const halfHeight =
       this.camera instanceof THREE.OrthographicCamera
-        ? 86 / this.camera.zoom
+        ? this.camera.top / this.camera.zoom
         : position.distanceTo(target) *
           Math.tan(THREE.MathUtils.degToRad(this.camera.fov / 2));
     this.controls.dispose();
@@ -1029,11 +1066,19 @@ export class RailwayWorld {
     this.trackside = false;
     this.followTransition = false;
     if (mode === 'iso') {
-      this.camera = new THREE.OrthographicCamera(-90, 90, 90, -90, 0.1, 800);
-      this.camera.position.copy(target).add(new THREE.Vector3(140, 155, 175));
-      this.camera.zoom = THREE.MathUtils.clamp(86 / halfHeight, 0.55, 9);
+      this.camera = new THREE.OrthographicCamera(-90, 90, 90, -90, 0.1, 1800);
+      this.camera.position
+        .copy(target)
+        .add(
+          new THREE.Vector3(140 * MAP_SCALE, 155 * MAP_SCALE, 175 * MAP_SCALE),
+        );
+      this.camera.zoom = THREE.MathUtils.clamp(
+        MAP.overviewHalf / halfHeight,
+        0.55,
+        48,
+      );
     } else {
-      this.camera = new THREE.PerspectiveCamera(43, 1, 0.1, 800);
+      this.camera = new THREE.PerspectiveCamera(43, 1, 0.1, 1800);
       this.camera.position.copy(
         position
           .sub(target)
@@ -1055,7 +1100,7 @@ export class RailwayWorld {
     this.trackside = false;
     this.followTransition = true;
     if (this.camera instanceof THREE.OrthographicCamera) {
-      this.camera.zoom = 5;
+      this.camera.zoom = Math.min(48, this.camera.top / 17.2);
       this.camera.updateProjectionMatrix();
     }
   }
@@ -1064,7 +1109,7 @@ export class RailwayWorld {
     this.followTransition = false;
     this.following = false;
     this.controls.target.set(0, 0, -7);
-    this.camera.position.set(140, 155, 175);
+    this.camera.position.set(140 * MAP_SCALE, 155 * MAP_SCALE, 175 * MAP_SCALE);
     if (this.camera instanceof THREE.OrthographicCamera) {
       this.camera.zoom = 1;
       this.camera.updateProjectionMatrix();
@@ -1076,7 +1121,7 @@ export class RailwayWorld {
       this.camera.zoom = THREE.MathUtils.clamp(
         this.camera.zoom * (direction > 0 ? 1.25 : 0.8),
         0.55,
-        9,
+        48,
       );
       this.camera.updateProjectionMatrix();
     } else {
@@ -1142,7 +1187,7 @@ export class RailwayWorld {
     if (this.camera instanceof THREE.PerspectiveCamera)
       this.camera.aspect = w / h;
     else {
-      const half = 86;
+      const half = MAP.overviewHalf * Math.max(1, 1.65 / (w / h));
       this.camera.left = (-half * w) / h;
       this.camera.right = (half * w) / h;
       this.camera.top = half;

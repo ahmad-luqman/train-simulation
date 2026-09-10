@@ -1,3 +1,5 @@
+import { riverX } from './terrain';
+import { MAP, MAP_SCALE } from './map';
 import { assertSeparated, until, sameSave } from './test-helpers';
 import { vehicles } from './safety';
 import { consistLength } from './dispatch';
@@ -104,9 +106,12 @@ void test('invalid construction, stale funds and occupied turnout work fail with
   for (const input of [
     { ...extension, end: 3 },
     { ...extension, bend: NaN },
-    { ...extension, end: { x: -58, z: 26 } },
+    {
+      ...extension,
+      end: { x: s.network.nodes[3].x + 1, z: s.network.nodes[3].z - 1 },
+    },
     { ...extension, end: { x: -80, z: 10, elevation: 8 } },
-    { ...extension, end: { x: 100, z: 10 } },
+    { ...extension, end: { x: MAP.maxX + 10, z: 10 } },
     { ...extension, end: { x: -75, z: 18 }, bend: 60 },
     { start: 0, end: 7, bend: 0, kind: 'track' } as Construction,
   ]) {
@@ -114,7 +119,10 @@ void test('invalid construction, stale funds and occupied turnout work fail with
     assert.throws(() => s.build(input));
     assert.deepEqual(s.save(), before);
   }
-  assert.equal(snapNode(s.network, -56, 28)!.id, 3);
+  assert.equal(
+    snapNode(s.network, s.network.nodes[3].x + 1, s.network.nodes[3].z + 1)!.id,
+    3,
+  );
   s.treasury = 1;
   const before = s.save();
   assert.throws(() => s.build(extension), /funds/);
@@ -132,7 +140,7 @@ void test('eligible river crossings quote and build a priced bridge, while river
   const s = new Simulation(),
     input: Construction = {
       start: 1,
-      end: { x: 40, z: -65 },
+      end: { x: 40 * MAP_SCALE, z: -65 * MAP_SCALE },
       bend: 0,
       kind: 'track',
     };
@@ -145,7 +153,7 @@ void test('eligible river crossings quote and build a priced bridge, while river
   assert.ok(
     quoteConstruction(s.network, {
       start: 2,
-      end: { x: 26, z: -30 },
+      end: { x: riverX(-30 * MAP_SCALE), z: -30 * MAP_SCALE },
       kind: 'track',
       bend: 0,
     }).errors.some((e) => e.includes('Bridges')),

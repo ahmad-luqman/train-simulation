@@ -1,5 +1,6 @@
 'use client';
 /* eslint-disable react/react-compiler -- Samples the authoritative mutable simulation. */
+import { MAP_VIEWBOX } from '@/lib/railway/map';
 import { useState } from 'react';
 import { X } from 'lucide-react';
 import { Input } from '@/components/ui/input';
@@ -126,7 +127,7 @@ export function Dispatcher({
       </label>
       <svg
         className="dispatch-map"
-        viewBox="-145 -145 290 290"
+        viewBox={MAP_VIEWBOX}
         aria-label="Physical running lines, station approaches and reserved route"
       >
         <defs>
@@ -170,7 +171,11 @@ export function Dispatcher({
                       ? sim.resourceLabel(`block:${section.edge}`)
                       : section.kind === 'crossover'
                         ? 'Controlled crossover'
-                        : 'Station turnout'}{' '}
+                        : section.id.startsWith('departure:')
+                          ? 'Return loop'
+                          : section.id.startsWith('arrival:')
+                            ? 'Platform fan'
+                            : 'Station throat'}{' '}
                   · {reserved ? 'Reserved' : 'Clear'}
                 </title>
               </polyline>
@@ -198,8 +203,8 @@ export function Dispatcher({
         })}
         {sim.network.nodes.map((n) => (
           <g key={n.id}>
-            <circle cx={n.x} cy={n.z} r="1.7" fill="#273c30" />
-            <text x={n.x + 2} y={n.z - 2} fontSize="3.5">
+            <circle cx={n.x} cy={n.z} r="3.4" fill="#273c30" />
+            <text x={n.x + 2} y={n.z - 2} fontSize="10">
               {n.name}
             </text>
           </g>
@@ -213,7 +218,7 @@ export function Dispatcher({
                 key={t.id}
                 cx={p.x}
                 cy={p.z}
-                r="1.5"
+                r="3"
                 fill={t.id === selected ? '#7752a0' : '#273c30'}
               >
                 <title>{locomotives[t.id].name}</title>
@@ -227,7 +232,7 @@ export function Dispatcher({
               train.motion.physical.stopTarget,
             ).p;
             return (
-              <circle cx={p.x} cy={p.z} r="2.3" stroke="#b15c22" fill="none">
+              <circle cx={p.x} cy={p.z} r="4.6" stroke="#b15c22" fill="none">
                 <title>Protected stopping target</title>
               </circle>
             );
@@ -291,8 +296,8 @@ export function Dispatcher({
       </svg>
       <p className="editor-hint">
         Solid: main line · dashed: second line · purple: selected route · ring:
-        stopping target. Each platform has its own approach and full-length
-        berth.
+        stopping target. Through platforms feed protected return loops; normal
+        services keep the locomotive in front.
       </p>
       <label htmlFor="dispatch-safety">
         <Input

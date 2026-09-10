@@ -1,4 +1,6 @@
 'use client';
+import { MAP_VIEWBOX, MAP } from '@/lib/railway/map';
+import { riverX } from '@/lib/railway/terrain';
 import { consistLength } from '@/lib/railway/dispatch';
 /* eslint-disable next/no-img-element -- Images are generated locally from Three.js models as data URLs. */
 /* eslint-disable react/react-compiler -- The compiler lint pass crashes on the imperative Three.js simulation store; this component opts out with use no memo. */
@@ -49,7 +51,8 @@ import type { RailwayWorld, CameraMode } from '@/lib/railway/world';
 import { makePortraits } from '@/lib/railway/portraits';
 import type { AudioMix } from '@/lib/railway/audio';
 import { registerRailwayTools } from '@/lib/railway/webmcp';
-const SAVE_KEY = 'steam-atlas-save-v4';
+const SAVE_KEY = 'steam-atlas-save-v5';
+const PHASE_3A_SAVE_KEY = 'steam-atlas-save-v4';
 const PHASE_3_SAVE_KEY = 'steam-atlas-save-v3';
 const PREVIOUS_SAVE_KEY = 'steam-atlas-save-v2';
 const LEGACY_SAVE_KEY = 'steam-atlas-save-v1';
@@ -197,6 +200,7 @@ export default function Game() {
     try {
       const data =
         localStorage.getItem(SAVE_KEY) ??
+        localStorage.getItem(PHASE_3A_SAVE_KEY) ??
         localStorage.getItem(PHASE_3_SAVE_KEY) ??
         localStorage.getItem(PREVIOUS_SAVE_KEY) ??
         localStorage.getItem(LEGACY_SAVE_KEY);
@@ -752,13 +756,13 @@ export default function Game() {
               onClick={overview}
             >
               <span>N ↑</span>
-              <svg
-                viewBox="-90 -85 180 170"
-                aria-label="Railway network overview"
-              >
+              <svg viewBox={MAP_VIEWBOX} aria-label="Railway network overview">
                 <title>Railway network overview</title>
                 <path
-                  d="M 41 -85 C 0 -20 74 12 41 85"
+                  d={Array.from({ length: 121 }, (_, i) => {
+                    const z = -MAP.halfDepth + (i * MAP.halfDepth) / 60;
+                    return `${i ? 'L' : 'M'} ${riverX(z)} ${z}`;
+                  }).join(' ')}
                   fill="none"
                   stroke="#86b6ad"
                   strokeWidth="7"

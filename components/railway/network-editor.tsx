@@ -33,6 +33,7 @@ import {
   type Service,
   type Point,
 } from '@/lib/railway/network';
+import { MAP, MAP_VIEWBOX, MAP_SCALE } from '@/lib/railway/map';
 import { metres, METRES_PER_UNIT } from '@/lib/railway/units';
 import { height, riverX } from '@/lib/railway/terrain';
 import type { Simulation } from '@/lib/railway/simulation';
@@ -61,7 +62,10 @@ export function NetworkEditor({
   'use no memo';
   const [tab, setTab] = useState('build'),
     [start, setStart] = useState(3),
-    [end, setEnd] = useState<Construction['end']>({ x: -80, z: 10 }),
+    [end, setEnd] = useState<Construction['end']>({
+      x: -80 * MAP_SCALE,
+      z: 10 * MAP_SCALE,
+    }),
     [bend, setBend] = useState(0),
     [kind, setKind] = useState<Construction['kind']>('track'),
     [parent, setParent] = useState('0-1'),
@@ -165,7 +169,13 @@ export function NetworkEditor({
     const p = new DOMPoint(e.clientX, e.clientY).matrixTransform(
       matrix.inverse(),
     );
-    choosePoint(p.x, p.y);
+    const nearby = snapNode(
+      sim.network,
+      p.x,
+      p.y,
+      Math.max(5, 14 / Math.hypot(matrix.a, matrix.b)),
+    );
+    choosePoint(nearby?.x ?? p.x, nearby?.z ?? p.y);
   }
   function action(fn: () => void, success: string) {
     try {
@@ -243,7 +253,7 @@ export function NetworkEditor({
         </label>
         <svg
           className="construction-map"
-          viewBox="-94 -76 188 164"
+          viewBox={MAP_VIEWBOX}
           aria-label="Editable network plan. Use the endpoint selectors and coordinates below for keyboard input."
           onPointerDown={clickMap}
         >
@@ -264,17 +274,17 @@ export function NetworkEditor({
             </pattern>
           </defs>
           <rect
-            x="-94"
-            y="-76"
-            width="188"
-            height="164"
+            x={-MAP.halfWidth}
+            y={-MAP.halfDepth}
+            width={MAP.halfWidth * 2}
+            height={MAP.halfDepth * 2}
             fill="url(#network-grid)"
           />
           <path
             d={pathData(
               Array.from({ length: 83 }, (_, i) => ({
-                x: riverX(i * 2 - 76),
-                z: i * 2 - 76,
+                x: riverX(-MAP.halfDepth + (i * MAP.halfDepth) / 41),
+                z: -MAP.halfDepth + (i * MAP.halfDepth) / 41,
               })),
             )}
             stroke="#467b82"
@@ -321,7 +331,7 @@ export function NetworkEditor({
               <circle
                 cx={n.x}
                 cy={n.z}
-                r={n.id === start && tab === 'build' ? 2.6 : 1.6}
+                r={n.id === start && tab === 'build' ? 5.2 : 3.2}
                 fill={
                   disconnected.includes(n)
                     ? '#ff927c'
@@ -330,7 +340,7 @@ export function NetworkEditor({
                       : '#9ce0c1'
                 }
               />
-              <text x={n.x + 2.2} y={n.z - 2.2} fontSize="3.2" fill="#eff2df">
+              <text x={n.x + 2.2} y={n.z - 2.2} fontSize="6.4" fill="#eff2df">
                 {n.name}
               </text>
             </g>
@@ -459,7 +469,7 @@ export function NetworkEditor({
                   onChange={(e) =>
                     setEnd(
                       e.target.value === 'new'
-                        ? { x: -80, z: 10 }
+                        ? { x: -80 * MAP_SCALE, z: 10 * MAP_SCALE }
                         : Number(e.target.value),
                     )
                   }
@@ -498,8 +508,8 @@ export function NetworkEditor({
                       id="railway-editor-field-7"
                       type="number"
                       value={Number(metres(end.x).toFixed(1))}
-                      min={metres(-86)}
-                      max={metres(86)}
+                      min={metres(MAP.minX)}
+                      max={metres(MAP.maxX)}
                       onChange={(e) =>
                         setEnd({
                           ...end,
@@ -514,8 +524,8 @@ export function NetworkEditor({
                       id="railway-editor-field-8"
                       type="number"
                       value={Number(metres(end.z).toFixed(1))}
-                      min={metres(-67)}
-                      max={metres(78)}
+                      min={metres(MAP.minZ)}
+                      max={metres(MAP.maxZ)}
                       onChange={(e) =>
                         setEnd({
                           ...end,

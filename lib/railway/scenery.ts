@@ -1,3 +1,4 @@
+import { MAP_SCALE } from './map';
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 
@@ -8,7 +9,7 @@ export const fields = [
   [60, 65],
   [22, -57],
   [-32, 60],
-];
+].map(([x, z]) => [x * MAP_SCALE, z * MAP_SCALE]);
 export function rng(seed: number) {
   return () => {
     seed = (seed * 1664525 + 1013904223) >>> 0;

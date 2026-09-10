@@ -1,3 +1,4 @@
+import { MAP } from './map';
 import type { DispatchSettings } from './dispatch';
 import { cities, corridors } from './data';
 import { height, riverX } from './terrain';
@@ -263,12 +264,13 @@ export function createNetwork(): RailNetwork {
         `platform-${n.id}`,
         `platform-${8 + n.id}`,
         `platform-${16 + n.id}`,
+        ...(n.id === 4 ? ['platform-24'] : []),
       ],
       built: false,
     })),
     nextNode: 8,
     nextEdge: 1,
-    nextPlatform: 24,
+    nextPlatform: 25,
   };
   for (const station of network.stations)
     Object.assign(
@@ -400,8 +402,8 @@ export function quoteConstruction(
             input.kind === 'loop' ? (input.bend < 0 ? -12 : 12) : input.bend,
           ),
     metrics = measure(points);
-  if (metrics.length < 16 || metrics.length > 180)
-    errors.push('Track length must be between 89 and 1,000 m.');
+  if (metrics.length < 16 || metrics.length > MAP.maxTrackLength)
+    errors.push('Track length must be between 89 and 2,400 m.');
   if (metrics.radius < 10)
     errors.push(
       'Curve radius is below 56 m. Reduce the bend or lengthen the track.',
@@ -410,7 +412,12 @@ export function quoteConstruction(
     errors.push(
       'Gradient exceeds 4%. Choose a lower endpoint or a longer alignment.',
     );
-  if (points.some((p) => Math.abs(p.x) > 86 || p.z < -67 || p.z > 78))
+  if (
+    points.some(
+      (p) =>
+        p.x < MAP.minX || p.x > MAP.maxX || p.z < MAP.minZ || p.z > MAP.maxZ,
+    )
+  )
     errors.push(
       'Track leaves the buildable valley. Mountains and tunnels are reserved for a later phase.',
     );

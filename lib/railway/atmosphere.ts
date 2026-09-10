@@ -1,3 +1,4 @@
+import { MAP, MAP_SCALE } from './map';
 import * as THREE from 'three';
 import { riverX } from './scenery';
 export type Quality = 'low' | 'balanced' | 'high';
@@ -37,14 +38,14 @@ export class Atmosphere {
     (this.scene.background as THREE.Color).copy(sky);
     const fog = this.scene.fog as THREE.Fog;
     fog.color.copy(sky);
-    fog.near = 180;
-    fog.far = 440;
+    fog.near = 180 * MAP_SCALE;
+    fog.far = 440 * MAP_SCALE;
     this.sun.color.set('#fff2d3').lerp(new THREE.Color('#ffad6a'), sunset);
     this.sun.intensity = day * (2.8 - sunset * 0.8);
     const angle = ((this.hour - 6) / 24) * Math.PI * 2;
     this.sun.position.set(
-      -Math.cos(angle) * 100,
-      Math.max(12, Math.sin(angle) * 125),
+      -Math.cos(angle) * 100 * MAP_SCALE,
+      Math.max(12, Math.sin(angle) * 125) * MAP_SCALE,
       40,
     );
     this.hemisphere.intensity = 0.65 + day * 1.25;
@@ -59,7 +60,7 @@ export function createRiver() {
     uvs: number[] = [],
     indices: number[] = [];
   for (let i = 0; i <= 240; i++) {
-    const z = -90 + i * 0.75;
+    const z = -MAP.halfDepth + (i * MAP.halfDepth) / 120;
     for (let j = 0; j <= 8; j++) {
       positions.push(riverX(z) + (j / 8 - 0.5) * 9.5, -0.95, z);
       uvs.push(j / 8, i / 240);
@@ -80,11 +81,13 @@ export function createRiver() {
       detail: { value: 1 },
       day: { value: 1 },
       fogColor: { value: new THREE.Color('#b8cfd5') },
+      fogNear: { value: 180 * MAP_SCALE },
+      fogFar: { value: 440 * MAP_SCALE },
     },
     vertexShader: `uniform float time; uniform float detail; varying vec2 vUv; varying vec3 vWorld; varying float vDepth;
       void main() { vUv = uv; vec3 p = position; p.y += sin(p.z * 1.8 + time * 1.4) * sin(uv.x * 3.14159) * 0.035 * detail;
       vWorld = (modelMatrix * vec4(p,1.0)).xyz; vec4 mv = modelViewMatrix * vec4(p,1.0); vDepth = -mv.z; gl_Position = projectionMatrix * mv; }`,
-    fragmentShader: `uniform float time; uniform float detail; uniform float day; uniform vec3 fogColor;
+    fragmentShader: `uniform float time; uniform float detail; uniform float day; uniform vec3 fogColor; uniform float fogNear; uniform float fogFar;
       varying vec2 vUv; varying vec3 vWorld; varying float vDepth;
       void main() {
         float shore = smoothstep(0.31, 0.5, abs(vUv.x - 0.5));
@@ -98,7 +101,7 @@ export function createRiver() {
         color += glint * 0.14 * detail * (0.3 + day * 0.7);
         float foam = smoothstep(0.86,1.0,shore) * (0.55+0.45*sin(vWorld.z*5.0-time*1.5));
         color = mix(color,vec3(0.68,0.78,0.73)*(0.4+day*0.6),foam*0.55*detail);
-        gl_FragColor = vec4(mix(color,fogColor,smoothstep(180.0,440.0,vDepth)),1.0);
+        gl_FragColor = vec4(mix(color,fogColor,smoothstep(fogNear,fogFar,vDepth)),1.0);
         #include <tonemapping_fragment>
         #include <colorspace_fragment>
       }`,

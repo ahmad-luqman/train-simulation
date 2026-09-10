@@ -1,3 +1,4 @@
+import { MAP_SCALE } from './map';
 export type City = {
   id: string;
   name: string;
@@ -6,7 +7,7 @@ export type City = {
   z: number;
   color: string;
 };
-export const cities: City[] = [
+const originalCities: City[] = [
   {
     id: 'coalhaven',
     name: 'Coalhaven',
@@ -72,6 +73,12 @@ export const cities: City[] = [
     color: '#c8bfa5',
   },
 ];
+export const cities: City[] = originalCities.map((city) => ({
+  ...city,
+  x: city.x * MAP_SCALE,
+  z: city.z * MAP_SCALE,
+}));
+
 export const corridors: [number, number][] = [
   [0, 1],
   [1, 2],

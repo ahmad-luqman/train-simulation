@@ -54,7 +54,7 @@ void test('parallel construction adds separated directional running lines, price
     s.trains[id].motion.departureDue = 0;
   }
   let concurrent = false;
-  for (let i = 0; i < 12000; i++) {
+  for (let i = 0; i < 24000; i++) {
     s.step(0.05);
     assertSeparated(s);
     const a = s.traffic.currentSection(s.trains[0]),
@@ -294,7 +294,7 @@ void test('following trains use separate parallel running lines concurrently wit
     s.trains[id].motion.departureDue = 0;
   }
   let concurrent = false;
-  for (let i = 0; i < 12000; i++) {
+  for (let i = 0; i < 24000; i++) {
     s.step(0.05);
     assertSeparated(s);
     const a = s.traffic.currentSection(s.trains[0]),

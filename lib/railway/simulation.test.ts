@@ -23,7 +23,7 @@ void test('every locomotive completes sustained service and revenue reconciles u
     sim.trains.forEach((t) => {
       t.held = t.id !== id;
     });
-    advance(sim, 400);
+    advance(sim, 900);
     assert.ok(
       sim.trains[id].delivered > 100,
       `${locomotives[id].name} is stuck`,

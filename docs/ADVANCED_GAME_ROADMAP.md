@@ -2,7 +2,7 @@
 
 **Purpose:** Turn the current railway sandbox into a visually rich management game with meaningful construction, dispatch, economic, and fleet decisions.
 **Baseline:** Current repository at `315b7fb`, reviewed 9 September 2026.
-**Status:** Phases 1–3 and the corrective **Phase 3A implementation are delivered**. [Phase 3A safety notes](PHASE_3A_SAFETY.md) record the plan, physical topology, automated acceptance and measured headless performance. The [audit of `b1c2d05`](PHASE_3_COLLISION_AUDIT.md) remains preserved as regression evidence. All twelve services deliver in the 1,800-second run and continue through a second 1,800-second window. **Browser/visual acceptance, independent review and the Phase 0 GPU baseline remain open; Phase 4 remains gated on that remaining evidence.** Phases 4–7 remain planned.
+**Status:** Phases 1–3 and the corrective **Phase 3A implementation are delivered**, followed by the requested [expanded valley and locomotive-leading station redesign](EXPANDED_VALLEY.md). [Phase 3A safety notes](PHASE_3A_SAFETY.md) record the plan, physical topology, automated acceptance and measured headless performance. The [audit of `b1c2d05`](PHASE_3_COLLISION_AUDIT.md) remains preserved as regression evidence. All twelve services deliver in the 1,800-second run and continue through a second 1,800-second window. **Browser/visual acceptance, independent review and the Phase 0 GPU baseline remain open; Phase 4 remains gated on that remaining evidence.** Phases 4–7 remain planned.
 
 ## Recommended direction
 
@@ -29,7 +29,7 @@ The original baseline had these limitations; Phase 2 resolves network ownership 
 - **Economy:** Cargo loads are generated rather than taken from inventories. Deliveries create revenue without recurring fuel, maintenance, staff, or infrastructure costs.
 - **Fleet:** Locomotives share the same underlying model design with different liveries. Wagon purchases change a count rather than a cargo-specific consist.
 - **Presentation:** Terrain, buildings, water, and smoke are simple procedural geometry. Graphics presets mainly change resolution and shadows.
-- **Persistence and verification — Phase 3A implemented:** Version 4 saves persist physical queues, berths, routes and authority; detached restore validates geometry, stopping protection and service order. Versions 1–3 are explicitly rejected without mutation or relocation because their positions lack physical berth/route authority. Original browser slots remain preserved. Headless performance is recorded; GPU/browser evidence remains open.
+- **Persistence and verification — Phase 3A implemented:** Version 5 saves persist the expanded map, through-platform orientation, physical queues, berths, routes and authority; detached restore validates geometry, stopping protection and service order. Versions 1–4 are explicitly rejected without mutation or relocation because their positions lack physical berth/route authority. Original browser slots remain preserved. Headless performance is recorded; GPU/browser evidence remains open.
 
 ## Phase overview
 
@@ -163,7 +163,7 @@ Export game assets as glTF/GLB and verify materials and animation in the actual 
 
 ## Phase 3A — Collision safety and automatic routing (corrective milestone)
 
-**Implementation complete; automated gates pass.** The work packages below are the retained specification. [Implementation/evidence](PHASE_3A_SAFETY.md) and [reproducible benchmark](benchmarks/phase3a.json) describe the result and the remaining browser, independent-review and GPU checks.
+**Implementation complete; automated gates pass.** The work packages below are the retained specification. [Implementation/evidence](PHASE_3A_SAFETY.md) and [original benchmark](benchmarks/phase3a.json) and [expanded-world benchmark](benchmarks/expanded-valley.json) describe the result and the remaining browser, independent-review and GPU checks.
 
 **Priority:** Required before Phase 4. **Status:** Planned; no corrective runtime work is claimed by the audit update.
 **Evidence:** [Collision and routing audit of `b1c2d05`](PHASE_3_COLLISION_AUDIT.md).

@@ -1,3 +1,4 @@
+import { MAP } from './map';
 import { Traffic } from './traffic';
 import { Topology, chooseYard, sample } from './topology';
 import {
@@ -55,7 +56,7 @@ export type ConstructionRecord = {
   used?: boolean;
 };
 export type SaveState = {
-  version: 4;
+  version: 5;
   dispatch: DispatchState;
   elapsed: number;
   accumulator: number;
@@ -269,7 +270,7 @@ export class Simulation {
     this.traffic.turnBack(this.trains[id]);
     this.revision++;
   }
-  resourceLabel(resource: string) {
+  resourceLabel(resource: string): string {
     const edgeId = resource.startsWith('block:')
       ? resource.slice(6)
       : undefined;
@@ -288,6 +289,10 @@ export class Simulation {
       if (station)
         return `${station.name} · platform ${station.platforms.indexOf(platform) + 1}`;
     }
+    if (resource.startsWith('section:arrival:'))
+      return `Arrival throat · ${this.resourceLabel(`platform:${resource.slice(16)}`)}`;
+    if (resource.startsWith('section:departure:'))
+      return `Return loop · ${this.resourceLabel(`platform:${resource.slice(18)}`)}`;
     if (resource.startsWith('zone:')) return 'Protected crossing / turnout';
     if (resource.startsWith('section:turnout:'))
       return 'Reserved station approach';
@@ -496,6 +501,16 @@ export class Simulation {
     const bodies = this.traffic.allEnvelopes();
     for (const section of proposed.sections.values()) {
       if (this.topology.sections.has(section.id)) continue;
+      if (
+        section.points.some(
+          (p) =>
+            Math.abs(p.x) >= MAP.halfWidth - 1 ||
+            Math.abs(p.z) >= MAP.halfDepth - 1,
+        )
+      )
+        throw new Error(
+          'The station approach or return loop extends outside the valley. Choose an endpoint with more room.',
+        );
       const workPoints = Array.from(
         { length: Math.ceil(section.length) + 1 },
         (_, i) => sample(section, Math.min(i, section.length)).p,
@@ -867,7 +882,7 @@ export class Simulation {
   }
   save(): SaveState {
     return structuredClone({
-      version: 4,
+      version: 5,
       dispatch: this.dispatch,
       elapsed: this.elapsed,
       accumulator: this.accumulator,
@@ -882,11 +897,11 @@ export class Simulation {
   restore(value: unknown) {
     // Validate a detached candidate; malformed saves cannot change the live world or treasury.
     const raw = value as SaveState;
-    if (!raw || ![1, 2, 3, 4].includes(raw.version))
+    if (!raw || ![1, 2, 3, 4, 5].includes(raw.version))
       throw new Error('This save version is not compatible.');
-    if (raw.version < 4)
+    if (raw.version < 5)
       throw new Error(
-        'This legacy save has no safe physical berth/route authority. The original slot is preserved; start a new railway. No trains were relocated.',
+        'This legacy save uses a different map or physical station layout. The original slot is preserved; start a new railway. No trains were relocated.',
       );
     const candidate = new Simulation();
     const s = structuredClone(raw);
@@ -1135,8 +1150,8 @@ function validateNetwork(n: RailNetwork) {
       node.id < 0 ||
       ids.has(node.id) ||
       ![node.x, node.y, node.z].every(Number.isFinite) ||
-      Math.abs(node.x) > 100 ||
-      Math.abs(node.z) > 100 ||
+      Math.abs(node.x) > MAP.halfWidth ||
+      Math.abs(node.z) > MAP.halfDepth ||
       node.y < 0 ||
       node.y > 40 ||
       typeof node.name !== 'string' ||
@@ -1170,8 +1185,8 @@ function validateNetwork(n: RailNetwork) {
         (p) =>
           !p ||
           ![p.x, p.y, p.z].every(Number.isFinite) ||
-          Math.abs(p.x) > 100 ||
-          Math.abs(p.z) > 100 ||
+          Math.abs(p.x) > MAP.halfWidth ||
+          Math.abs(p.z) > MAP.halfDepth ||
           p.y < 0 ||
           p.y > 40,
       )
@@ -1192,7 +1207,7 @@ function validateNetwork(n: RailNetwork) {
       !Number.isFinite(edge.length) ||
       Math.abs(length - edge.length) > 1e-6 ||
       length < 1 ||
-      length > 300 ||
+      length > MAP.maxTrackLength + 100 ||
       ([
         first.x - a.x,
         first.y - a.y,
