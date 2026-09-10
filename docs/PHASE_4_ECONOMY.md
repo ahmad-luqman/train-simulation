@@ -68,3 +68,13 @@ The reported screenshot showed Alpine Monarch in the off-network depot queue. It
 Four focused camera tests cover the screenshot’s queued Alpine Monarch state in both projections, automatic physical-berth acquisition and on-screen centering, switching through a queued subject, smooth zoom, frame-rate independence and retained manual framing. Browser interaction and GPU acceptance remain separately open.
 
 Follow-camera verification: all 79 regression tests, typecheck, lint and production build pass. The rebuilt local Worker responds with HTTP 200 at `http://localhost:8787`.
+
+## Terrain burial correction
+
+The Coalhaven and Riverside screenshots exposed an older expanded-map mismatch: physical station tracks retain their designed elevation while the procedural outer valley rises beneath the extended yards. At Coalhaven’s third berth stop, the terrain was 0.873 units high while the rail top was only 0.49. This hid both rails and lower vehicle bodies.
+
+`rail-earthworks.ts` now grades the rendered terrain beneath every physical running line, turnout, platform, crossover and return loop. It lowers ground to track formation level, protects a full terrain-cell diagonal around the track bed to prevent triangle interpolation from covering rails, and blends cutting shoulders into the surrounding land. Platform clearance includes its adjacent walking surface. Railway geometry, vehicle positions, dispatch, construction prices and saves remain unchanged. This is a rendering correction to expose the existing alignment, not a new terrain-editing command.
+
+Cuts are regenerated from the natural terrain on network rebuild, including construction, demolition, undo and load. They do not raise or fill the riverbed. Trees, rocks and camera ground clearance sample the same graded triangles. Regression tests reproduce the buried Coalhaven berth, sample both rails and ballast across every physical alignment, compare scenery height queries against raycasts onto the rendered mesh, and verify river preservation, restoration after removal and unchanged simulation state. Browser visual acceptance remains open.
+
+Terrain-fix verification: all 82 tests, typecheck, lint and production build pass. At all three Riverside berth stops, natural ground was 1.917 units above datum while rails were at 0.49; graded ground is now 0. The local Worker reloaded the rebuilt source and responds with HTTP 200 at `http://localhost:8787`.

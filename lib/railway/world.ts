@@ -1,3 +1,9 @@
+import {
+  railwayGround,
+  groundHeight,
+  TERRAIN_COLUMNS,
+  TERRAIN_ROWS,
+} from './rail-earthworks';
 import { FollowCamera, trainCameraTarget } from './follow-camera';
 import { MAP, MAP_SCALE } from './map';
 import { vehicles } from './safety';
@@ -80,6 +86,8 @@ export class RailwayWorld {
   private onSelect: (id: number) => void;
   private selectionRing: THREE.Mesh;
   private water: THREE.Mesh;
+  private groundGeometry!: THREE.PlaneGeometry;
+  private groundHeights = new Float32Array();
   private sunlight: THREE.DirectionalLight;
   private signalLights: { key: string; reverse: boolean; mesh: THREE.Mesh }[] =
     [];
@@ -230,17 +238,19 @@ export class RailwayWorld {
     const geo = new THREE.PlaneGeometry(
       MAP.halfWidth * 2,
       MAP.halfDepth * 2,
-      240,
-      224,
+      TERRAIN_COLUMNS,
+      TERRAIN_ROWS,
     );
     geo.rotateX(-Math.PI / 2);
+    this.groundGeometry = geo;
+    this.groundHeights = railwayGround(this.sim.topology.sections.values());
     const pos = geo.attributes.position;
     const colors = [];
 
     for (let i = 0; i < pos.count; i++) {
       const x = pos.getX(i),
         z = pos.getZ(i),
-        y = height(x, z);
+        y = this.groundHeights[i];
       pos.setY(i, y);
       const shore = Math.abs(x - riverX(z));
       const slope = Math.hypot(
@@ -339,6 +349,15 @@ export class RailwayWorld {
     parent?.add(group);
   }
   private rebuildNetwork() {
+    // Recompute from natural terrain so demolition/undo can restore unused cuts.
+    this.groundHeights = railwayGround(this.sim.topology.sections.values());
+    const groundPositions = this.groundGeometry.attributes.position;
+    for (let i = 0; i < groundPositions.count; i++)
+      groundPositions.setY(i, this.groundHeights[i]);
+    groundPositions.needsUpdate = true;
+    this.groundGeometry.computeVertexNormals();
+    this.groundGeometry.computeBoundingBox();
+    this.groundGeometry.computeBoundingSphere();
     this.releaseGroup(this.railGroup);
     this.releaseGroup(this.sceneryGroup);
     this.curves.clear();
@@ -680,7 +699,12 @@ export class RailwayWorld {
       const cluster =
         Math.sin(x * 0.075) * Math.cos(z * 0.09) + Math.sin((x + z) * 0.045);
       if (cluster < -0.25 && random() > 0.12) continue;
-      positions.push({ x, z, y: height(x, z), s: 0.65 + random() * 0.9 });
+      positions.push({
+        x,
+        z,
+        y: groundHeight(this.groundHeights, x, z),
+        s: 0.65 + random() * 0.9,
+      });
     }
     const trunk = new THREE.InstancedMesh(
       new THREE.CylinderGeometry(0.13, 0.23, 1.6, 5),
@@ -725,7 +749,7 @@ export class RailwayWorld {
     for (let i = 0; i < 100; i++) {
       const x = (random() * 180 - 90) * MAP_SCALE,
         z = (-68 - random() * 19) * MAP_SCALE;
-      o.position.set(x, height(x, z), z);
+      o.position.set(x, groundHeight(this.groundHeights, x, z), z);
       o.scale.set(1 + random() * 1.5, 0.8 + random(), 1 + random());
       o.rotation.set(random(), random(), random());
       o.updateMatrix();
@@ -959,7 +983,8 @@ export class RailwayWorld {
     this.controls.update();
     this.camera.position.y = Math.max(
       this.camera.position.y,
-      height(
+      groundHeight(
+        this.groundHeights,
         THREE.MathUtils.clamp(
           this.camera.position.x,
           -MAP.halfWidth,
