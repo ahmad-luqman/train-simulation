@@ -12,3 +12,6 @@ export const MAP = {
   maxTrackLength: 180 * MAP_SCALE,
 };
 export const MAP_VIEWBOX = `${-MAP.halfWidth} ${-MAP.halfDepth} ${MAP.halfWidth * 2} ${MAP.halfDepth * 2}`;
+
+// Plan views show usable construction land, without the decorative terrain rim.
+export const BUILD_VIEWBOX = `${MAP.minX - 24} ${MAP.minZ - 24} ${MAP.maxX - MAP.minX + 48} ${MAP.maxZ - MAP.minZ + 48}`;

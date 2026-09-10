@@ -33,7 +33,7 @@ import {
   type Service,
   type Point,
 } from '@/lib/railway/network';
-import { MAP, MAP_VIEWBOX, MAP_SCALE } from '@/lib/railway/map';
+import { MAP, BUILD_VIEWBOX, MAP_SCALE } from '@/lib/railway/map';
 import { metres, METRES_PER_UNIT } from '@/lib/railway/units';
 import { height, riverX } from '@/lib/railway/terrain';
 import type { Simulation } from '@/lib/railway/simulation';
@@ -253,7 +253,7 @@ export function NetworkEditor({
         </label>
         <svg
           className="construction-map"
-          viewBox={MAP_VIEWBOX}
+          viewBox={BUILD_VIEWBOX}
           aria-label="Editable network plan. Use the endpoint selectors and coordinates below for keyboard input."
           onPointerDown={clickMap}
         >
@@ -340,7 +340,16 @@ export function NetworkEditor({
                       : '#9ce0c1'
                 }
               />
-              <text x={n.x + 2.2} y={n.z - 2.2} fontSize="6.4" fill="#eff2df">
+              <text
+                x={n.x}
+                y={n.z - 10}
+                textAnchor="middle"
+                fontSize="18"
+                fill="#eff2df"
+                stroke="#233f34"
+                strokeWidth="3"
+                paintOrder="stroke"
+              >
                 {n.name}
               </text>
             </g>
@@ -540,13 +549,15 @@ export function NetworkEditor({
                       id="railway-editor-field-9"
                       type="number"
                       step=".1"
-                      value={metres(
-                        end.elevation ??
-                          Number(
-                            (Math.max(0, height(end.x, end.z)) + 0.36).toFixed(
-                              2,
+                      value={Number(
+                        metres(
+                          end.elevation ??
+                            Number(
+                              (
+                                Math.max(0, height(end.x, end.z)) + 0.36
+                              ).toFixed(2),
                             ),
-                          ),
+                        ).toFixed(1),
                       )}
                       min={metres(0.36)}
                       max={metres(8)}
@@ -595,7 +606,9 @@ export function NetworkEditor({
             <p className="editor-metrics">
               {metres(quote.edge.length).toFixed(1)} m ·{' '}
               {(quote.edge.grade * 100).toFixed(1)}% grade ·{' '}
-              {metres(quote.edge.radius).toFixed(0)} m minimum radius
+              {quote.edge.radius >= 1e8
+                ? 'Straight track'
+                : `${metres(quote.edge.radius).toFixed(0)} m minimum radius`}
               {quote.edge.bridgeLength > 0 &&
                 ` · automatic bridge ${metres(quote.edge.bridgeLength).toFixed(1)} m`}
             </p>

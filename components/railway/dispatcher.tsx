@@ -1,7 +1,6 @@
 'use client';
 /* eslint-disable react/react-compiler -- Samples the authoritative mutable simulation. */
-import { MAP_VIEWBOX } from '@/lib/railway/map';
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { X } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import {
@@ -39,6 +38,27 @@ export function Dispatcher({
   const [feedback, setFeedback] = useState('');
   const [showSafety, setShowSafety] = useState(false);
   const [selectedLine, setSelectedLine] = useState('');
+  const topology = sim.topology;
+  const plan = useMemo(() => {
+    let minX = Infinity,
+      minZ = Infinity,
+      maxX = -Infinity,
+      maxZ = -Infinity;
+    for (const section of topology.sections.values()) {
+      for (const point of section.points) {
+        minX = Math.min(minX, point.x);
+        maxX = Math.max(maxX, point.x);
+        minZ = Math.min(minZ, point.z);
+        maxZ = Math.max(maxZ, point.z);
+      }
+    }
+    const width = maxX - minX + 64,
+      height = maxZ - minZ + 64;
+    return {
+      viewBox: `${minX - 32} ${minZ - 32} ${width} ${height}`,
+      aspectRatio: `${width} / ${height}`,
+    };
+  }, [topology]);
   const snapshot = sim.dispatcherSnapshot(),
     train = sim.trains[selected],
     edge = sim.track(train);
@@ -127,7 +147,8 @@ export function Dispatcher({
       </label>
       <svg
         className="dispatch-map"
-        viewBox={MAP_VIEWBOX}
+        viewBox={plan.viewBox}
+        style={{ aspectRatio: plan.aspectRatio }}
         aria-label="Physical running lines, station approaches and reserved route"
       >
         <defs>
@@ -204,7 +225,15 @@ export function Dispatcher({
         {sim.network.nodes.map((n) => (
           <g key={n.id}>
             <circle cx={n.x} cy={n.z} r="3.4" fill="#273c30" />
-            <text x={n.x + 2} y={n.z - 2} fontSize="10">
+            <text
+              x={n.x}
+              y={n.z - 10}
+              textAnchor="middle"
+              fontSize="18"
+              stroke="#e1e8d9"
+              strokeWidth="3"
+              paintOrder="stroke"
+            >
               {n.name}
             </text>
           </g>

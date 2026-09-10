@@ -88,10 +88,26 @@ per-service progress, ten simultaneously moving trains and zero emergency
 collision stops, plus the held-train recovery. This measures simulation cost,
 not WebGL frame rate. The original Phase 3A result is retained for comparison.
 
-Browser interaction and visual acceptance were not performed because the active
-Sites environment requires an explicit browser-testing request. The outstanding
-GPU baseline and independent safety review remain open. No claim of browser or
-GPU acceptance is made by the automated tests or build.
+The user authorized browser review on 10 September 2026. Safari screenshots
+confirmed the full valley overview and all eight station labels, and exposed
+unreadable labels and excessive empty space in the construction and dispatcher
+plans. The construction plan now frames the buildable land; the dispatcher fits
+its physical tracks and preserves their aspect ratio. Both use larger, outlined
+station names. Follow-up screenshots confirmed the improved diagrams. The editor
+also displays “Straight track” instead of its effectively infinite radius and
+rounds the elevation field to its supported tenth of a metre.
+
+Roster selection, opening/closing both panels, camera/follow button states and
+enlarged browser text were exercised. These checks did not purchase construction
+or overwrite a local save. TypeScript, lint and the production build passed after
+the display changes; simulation code was unchanged.
+
+Full browser acceptance remains open. The native browser window repeatedly
+became unavailable for sustained animation: its railway clock remained fixed
+while backgrounded, with only a brief visible interval showing a rendered valley
+and moving service. A foreground window was requested for the remaining train
+close-ups, return-loop movement, busy-junction and small-screen interaction
+checks. No sustained FPS/GPU measurement or independent safety review is claimed.
 
 Verification passed: **60/60 tests**, TypeScript, lint and production build.
 The final construction-clearance change also passed the 20-test construction
