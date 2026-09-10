@@ -1,3 +1,11 @@
+import {
+  createEconomy,
+  tickEconomy,
+  journal,
+  pay,
+  validateEconomy,
+  type EconomyState,
+} from './economy';
 import { MAP } from './map';
 import { Traffic } from './traffic';
 import { Topology, chooseYard, sample } from './topology';
@@ -56,7 +64,8 @@ export type ConstructionRecord = {
   used?: boolean;
 };
 export type SaveState = {
-  version: 5;
+  version: 6;
+  economy: EconomyState;
   dispatch: DispatchState;
   elapsed: number;
   accumulator: number;
@@ -70,7 +79,13 @@ export type SaveState = {
 export class Simulation {
   network = createNetwork();
   services: Service[] = locomotives.map((l, id) =>
-    planService(this.network, id, `${l.name} service`, l.route, 3.5),
+    planService(
+      this.network,
+      id,
+      `${l.name} service`,
+      id === 3 ? [0, 4] : id === 4 ? [3, 4] : l.route,
+      3.5,
+    ),
   );
   construction: ConstructionRecord[] = [];
   revision = 0;
@@ -84,10 +99,28 @@ export class Simulation {
     delivered: 0,
     revenue: 0,
     status: 'At station',
-    load: 62 + ((id * 7) % 35),
+    load: 0,
     motion: { ...newMotion(), departureDue: id * 0.8 },
   }));
   treasury = 425000;
+  economy = createEconomy(
+    this.network.stations.map((s) => s.node),
+    locomotives.length,
+  );
+  constructor() {
+    this.economy.ledger.push({
+      id: 1,
+      at: 0,
+      category: 'opening',
+      amount: this.treasury,
+      balance: this.treasury,
+      debt: 0,
+      note: 'Opening capital',
+    });
+  }
+  canAfford(amount: number) {
+    return this.economy.mode === 'unlimited' || this.treasury >= amount;
+  }
   delivered = 0;
   elapsed = 0;
   speed = 1;
@@ -118,7 +151,9 @@ export class Simulation {
     this.accumulator += Math.min(realDelta, 0.25) * this.speed;
     while (this.accumulator >= 0.05 - 1e-10) {
       this.accumulator = Math.max(0, this.accumulator - 0.05);
+      if (this.accumulator < 1e-10) this.accumulator = 0;
       this.elapsed += 0.05;
+      tickEconomy(this);
       this.releaseCleared();
       const order = [...this.trains].sort(
         (a, b) => this.dispatchRank(b) - this.dispatchRank(a) || a.id - b.id,
@@ -331,7 +366,7 @@ export class Simulation {
     if (
       !t ||
       t.cars >= 6 ||
-      this.treasury < 8500 ||
+      !this.canAfford(8500) ||
       t.motion.started ||
       t.motion.reversed ||
       !this.traffic.canAddCar(t)
@@ -349,7 +384,11 @@ export class Simulation {
       if (r.owner === id && r.releaseAt !== null) r.releaseAt += 3;
     t.cars++;
     this.traffic.refreshProtection();
-    this.treasury -= 8500;
+    pay(this, 8500, 'wagon', 'Additional wagon', id);
+    t.load = Math.round(
+      ((this.economy.services[id].manifest?.quantity ?? 0) / (t.cars * 18)) *
+        100,
+    );
     return true;
   }
   stopForEditing(id: number) {
@@ -378,6 +417,8 @@ export class Simulation {
       throw new Error(
         'Stop this train at a station before changing its service.',
       );
+    if (this.economy.services[t.id].manifest)
+      throw new Error('Deliver the cargo aboard before changing the service.');
     const at = this.endpoints(t)[0];
     if (service.legs[0].from !== at)
       throw new Error(
@@ -492,7 +533,7 @@ export class Simulation {
         quote.errors.push((error as Error).message);
       }
     }
-    if (quote.cost.total > this.treasury)
+    if (!this.canAfford(quote.cost.total))
       quote.errors.push('Insufficient funds for this construction.');
     return quote;
   }
@@ -549,7 +590,7 @@ export class Simulation {
     }
     this.network.edges.push(q.edge);
     this.network.nextEdge++;
-    this.treasury -= q.cost.total;
+    pay(this, q.cost.total, 'construction', 'Track construction');
     this.construction.push({
       id: this.construction.length + 1,
       action: 'build',
@@ -617,7 +658,7 @@ export class Simulation {
       errors.push(
         'This corridor is too short for a fleet-safe crossover lead.',
       );
-    if (this.treasury < cost.total)
+    if (!this.canAfford(cost.total))
       errors.push('Insufficient funds for crossover work.');
     return { errors, cost };
   }
@@ -635,7 +676,7 @@ export class Simulation {
       position,
       cost: quote.cost,
     });
-    this.treasury -= quote.cost.total;
+    pay(this, quote.cost.total, 'construction', 'Crossover construction');
     this.construction.push({
       id: this.construction.length + 1,
       action: 'crossover',
@@ -690,7 +731,7 @@ export class Simulation {
     const reason = this.worksiteReason([node]);
     if (reason) throw new Error(reason);
     const total = this.stationCost(node);
-    if (this.treasury < total)
+    if (!this.canAfford(total))
       throw new Error('Insufficient funds for station work.');
     const placement = existing ? undefined : chooseYard(this.network, node);
     const platform = `platform-${this.network.nextPlatform}`;
@@ -715,7 +756,7 @@ export class Simulation {
       this.network.stations.push(station);
       n.name = station.name;
     }
-    this.treasury -= total;
+    pay(this, total, 'construction', 'Station and platform construction');
     this.construction.push({
       id: this.construction.length + 1,
       action: existing ? 'platform' : 'station',
@@ -839,11 +880,28 @@ export class Simulation {
           (s) => s.id !== record.station,
         );
     }
+    if (record.station && record.action !== 'platform') {
+      const removed = this.economy.towns.filter(
+        (town) =>
+          !this.network.stations.some((station) => station.node === town.node),
+      );
+      for (const town of removed)
+        this.economy.consumed.passengers +=
+          town.stock.passengers + town.received.passengers;
+      this.economy.towns = this.economy.towns.filter(
+        (town) => !removed.includes(town),
+      );
+    }
     if (record.node !== undefined && record.action === 'build')
       this.network.nodes = this.network.nodes.filter(
         (n) => n.id !== record.node,
       );
-    this.treasury += record.amount;
+    journal(
+      this,
+      'refund',
+      record.amount,
+      `Construction #${record.id} refunded`,
+    );
     record.reversed = true;
     this.construction.push({
       id: this.construction.length + 1,
@@ -882,7 +940,8 @@ export class Simulation {
   }
   save(): SaveState {
     return structuredClone({
-      version: 5,
+      version: 6,
+      economy: this.economy,
       dispatch: this.dispatch,
       elapsed: this.elapsed,
       accumulator: this.accumulator,
@@ -897,7 +956,7 @@ export class Simulation {
   restore(value: unknown) {
     // Validate a detached candidate; malformed saves cannot change the live world or treasury.
     const raw = value as SaveState;
-    if (!raw || ![1, 2, 3, 4, 5].includes(raw.version))
+    if (!raw || ![1, 2, 3, 4, 5, 6].includes(raw.version))
       throw new Error('This save version is not compatible.');
     if (raw.version < 5)
       throw new Error(
@@ -1061,9 +1120,8 @@ export class Simulation {
       candidate.accumulator = s.accumulator;
     }
     if (
-      ![s.elapsed, s.treasury, s.delivered].every(
-        (n) => Number.isFinite(n) && n >= 0,
-      ) ||
+      !Number.isSafeInteger(s.treasury) ||
+      ![s.elapsed, s.delivered].every((n) => Number.isFinite(n) && n >= 0) ||
       !Array.isArray(s.trains) ||
       s.trains.length !== locomotives.length
     )
@@ -1104,6 +1162,37 @@ export class Simulation {
     candidate.elapsed = s.elapsed;
     candidate.treasury = s.treasury;
     candidate.delivered = s.delivered;
+    if (Number(raw.version) === 5) {
+      candidate.economy = createEconomy(
+        candidate.network.stations.map((station) => station.node),
+        candidate.trains.length,
+      );
+      candidate.economy.second = Math.floor(candidate.elapsed + 1e-7);
+      candidate.economy.billedMinute = Math.floor(
+        (candidate.elapsed + 1e-7) / 60,
+      );
+      candidate.economy.billedDistance = candidate.trains.map(
+        (t) => t.motion.travelled,
+      );
+      candidate.economy.openingRevenue = candidate.trains.map((t) => t.revenue);
+      candidate.economy.openingDelivered = candidate.trains.map(
+        (t) => t.delivered,
+      );
+      candidate.economy.ledger = [
+        {
+          id: 1,
+          at: candidate.elapsed,
+          category: 'opening',
+          amount: candidate.treasury,
+          balance: candidate.treasury,
+          debt: 0,
+          note: 'Version 5 opening balance; historic cargo was not inventoried',
+        },
+      ];
+      candidate.trains.forEach((t) => (t.load = 0));
+    } else candidate.economy = s.economy;
+    validateEconomy(candidate);
+    this.economy = candidate.economy;
     this.network = candidate.network;
     this.services = candidate.services;
     this.construction = candidate.construction;

@@ -2079,3 +2079,184 @@ p {
   border-radius: 6px;
   color: #654821;
 }
+
+/* The company books share the construction office's paper-and-ink palette. */
+.economy-office {
+  width: min(580px, calc(100% - 28px));
+}
+.economy-summary {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+  padding: 16px;
+  background: #e5eadf;
+  border-radius: 8px;
+  margin-bottom: 18px;
+}
+.economy-summary > div {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.economy-summary span {
+  font-size: 0.875rem;
+}
+.economy-summary strong {
+  font-size: 1.25rem;
+  font-variant-numeric: tabular-nums;
+}
+.economy-summary .economy-net {
+  grid-column: 1 / -1;
+  border-top: 1px solid #b9c5b1;
+  padding-top: 10px;
+  flex-direction: row;
+  justify-content: space-between;
+  align-items: center;
+}
+.economy-tabs {
+  width: 100%;
+  min-height: 40px;
+  margin-bottom: 12px;
+}
+.economy-tabs button {
+  font-size: 0.875rem;
+}
+.economy-office [data-slot='tabs-content'] {
+  font-size: 1rem;
+}
+.economy-map {
+  width: 100%;
+  background: #eaf0e4;
+  border: 1px solid #becbb7;
+  border-radius: 8px;
+}
+.economy-map text {
+  font:
+    12px Georgia,
+    serif;
+  fill: #23382a;
+  paint-order: stroke;
+  stroke: #eaf0e4;
+  stroke-width: 3px;
+  stroke-linejoin: round;
+}
+.economy-small,
+.economy-office p.economy-small {
+  font-size: 0.875rem;
+  line-height: 1.6;
+}
+.economy-table-scroll {
+  overflow-x: auto;
+}
+.economy-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.875rem;
+  font-variant-numeric: tabular-nums;
+}
+.economy-table caption {
+  text-align: left;
+  padding: 10px 0;
+  font-weight: 650;
+}
+.economy-table td,
+.economy-table th {
+  padding: 10px 8px;
+  border-bottom: 1px solid #d0d8c9;
+  text-align: right;
+  vertical-align: top;
+}
+.economy-table th:first-child {
+  text-align: left;
+}
+.economy-table tbody th {
+  font-weight: 500;
+  min-width: 140px;
+}
+.economy-table td {
+  white-space: nowrap;
+}
+.economy-table small {
+  display: block;
+  font-size: 0.8125rem;
+  font-weight: 400;
+  color: #52614d;
+  margin-top: 4px;
+}
+.economy-loss {
+  color: #983b2a;
+}
+.economy-chains {
+  padding-left: 22px;
+}
+.economy-chains li {
+  padding: 6px 0;
+}
+.economy-contract {
+  border: 1px solid #c4d0bb;
+  border-radius: 8px;
+  padding: 0 16px 16px;
+  margin: 14px 0;
+}
+.economy-contract progress {
+  width: 100%;
+  accent-color: #42644a;
+}
+.economy-warning,
+.economy-feedback {
+  display: block;
+  padding: 12px;
+  margin: 12px 0;
+  background: #f6e7c6;
+  border-left: 3px solid #ac7934;
+  font-size: 0.875rem;
+}
+.economy-feedback {
+  background: #e0ead8;
+  border-color: #5d7a4f;
+}
+.economy-manifest {
+  padding: 14px;
+  background: #e5eadf;
+  border-radius: 6px;
+}
+.economy-link {
+  color: #365a3e;
+  text-decoration: underline;
+  text-align: left;
+  cursor: pointer;
+}
+.economy-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  margin: 14px 0;
+  font-size: 0.875rem;
+}
+.economy-office details {
+  border-block: 1px solid #c4d0bb;
+  margin-top: 18px;
+  padding: 12px 0;
+}
+.economy-office summary {
+  cursor: pointer;
+  font-size: 0.875rem;
+  font-weight: 600;
+}
+@media (max-width: 600px) {
+  .economy-office {
+    padding: 14px;
+  }
+  .economy-summary {
+    gap: 8px;
+    padding: 12px;
+  }
+  .economy-tabs {
+    gap: 0;
+  }
+  .economy-table td,
+  .economy-table th {
+    padding: 9px 5px;
+  }
+}

@@ -42,6 +42,8 @@ import {
   NativeSelectOption,
 } from '@/components/ui/native-select';
 import { locomotives, money } from '@/lib/railway/data';
+import { EconomyOffice } from './economy-office';
+import { accounts, WAGONS } from '@/lib/railway/economy';
 import { Dispatcher } from './dispatcher';
 import { speedKmh } from '@/lib/railway/dispatch';
 import { NetworkEditor } from './network-editor';
@@ -51,16 +53,18 @@ import type { RailwayWorld, CameraMode } from '@/lib/railway/world';
 import { makePortraits } from '@/lib/railway/portraits';
 import type { AudioMix } from '@/lib/railway/audio';
 import { registerRailwayTools } from '@/lib/railway/webmcp';
-const SAVE_KEY = 'steam-atlas-save-v5';
+const SAVE_KEY = 'steam-atlas-save-v6';
+const PHASE_3B_SAVE_KEY = 'steam-atlas-save-v5';
 const PHASE_3A_SAVE_KEY = 'steam-atlas-save-v4';
 const PHASE_3_SAVE_KEY = 'steam-atlas-save-v3';
 const PREVIOUS_SAVE_KEY = 'steam-atlas-save-v2';
 const LEGACY_SAVE_KEY = 'steam-atlas-save-v1';
 export default function Game() {
   'use no memo'; // The mutable simulation is sampled by a render timer, outside React Compiler ownership.
+  const [simulation] = useState(() => new Simulation());
   const mount = useRef<HTMLDivElement>(null),
     world = useRef<RailwayWorld | null>(null),
-    sim = useRef(new Simulation());
+    sim = useRef(simulation);
   const [selected, setSelected] = useState(10),
     [mode, setMode] = useState<CameraMode>('iso'),
     [following, setFollowing] = useState(false),
@@ -85,7 +89,8 @@ export default function Game() {
     [detailsOpen, setDetailsOpen] = useState(false),
     [quality, setQuality] = useState('balanced'),
     [editorOpen, setEditorOpen] = useState(false),
-    [dispatcherOpen, setDispatcherOpen] = useState(false);
+    [dispatcherOpen, setDispatcherOpen] = useState(false),
+    [economyOpen, setEconomyOpen] = useState(false);
   useEffect(() => {
     let active = true;
     let instance: RailwayWorld | undefined;
@@ -200,6 +205,7 @@ export default function Game() {
     try {
       const data =
         localStorage.getItem(SAVE_KEY) ??
+        localStorage.getItem(PHASE_3B_SAVE_KEY) ??
         localStorage.getItem(PHASE_3A_SAVE_KEY) ??
         localStorage.getItem(PHASE_3_SAVE_KEY) ??
         localStorage.getItem(PREVIOUS_SAVE_KEY) ??
@@ -211,6 +217,7 @@ export default function Game() {
       sim.current.restore(JSON.parse(data));
       setEditorOpen(false);
       setDispatcherOpen(false);
+      setEconomyOpen(false);
       setTick((t) => t + 1);
       setNotice('Your railway has been restored.');
     } catch {
@@ -290,10 +297,8 @@ export default function Game() {
             <strong>{money(sim.current.treasury)}</strong>
           </div>
           <div className="profit-stat">
-            <span className="eyebrow">Operating revenue</span>
-            <strong>
-              {money(sim.current.trains.reduce((sum, t) => sum + t.revenue, 0))}
-            </strong>
+            <span className="eyebrow">Net operating profit</span>
+            <strong>{money(accounts(sim.current.economy).profit)}</strong>
           </div>
           <div>
             <span className="eyebrow">Delivered</span>
@@ -305,7 +310,10 @@ export default function Game() {
         </div>
         <div className="header-end">
           <span className="sandbox-badge">
-            <span className="live-dot" /> Sandbox
+            <span className="live-dot" />{' '}
+            {sim.current.economy.mode === 'unlimited'
+              ? 'Unlimited funds'
+              : 'Standard economy'}
           </span>
           <Dialog>
             <DialogTrigger className="icon-button" aria-label="How to play">
@@ -452,7 +460,7 @@ export default function Game() {
             </div>
           )}
           <div className="map-title">
-            <div className="eyebrow">Region 01 / Sandbox</div>
+            <div className="eyebrow">Region 01 / Meridian Railway</div>
             <h1>Meridian Valley</h1>
             <div>
               {sim.current.network.stations.length} stations <span>·</span>{' '}
@@ -465,6 +473,7 @@ export default function Game() {
                 className="map-button"
                 aria-expanded={editorOpen}
                 onClick={() => {
+                  setEconomyOpen(false);
                   setEditorOpen(!editorOpen);
                   setDispatcherOpen(false);
                 }}
@@ -475,11 +484,23 @@ export default function Game() {
                 className="map-button"
                 aria-expanded={dispatcherOpen}
                 onClick={() => {
+                  setEconomyOpen(false);
                   setDispatcherOpen(!dispatcherOpen);
                   setEditorOpen(false);
                 }}
               >
                 Dispatcher
+              </button>
+              <button
+                className="map-button"
+                aria-expanded={economyOpen}
+                onClick={() => {
+                  setEconomyOpen(!economyOpen);
+                  setEditorOpen(false);
+                  setDispatcherOpen(false);
+                }}
+              >
+                Economy
               </button>
             </div>
             <div className="toolbar-row">
@@ -790,6 +811,15 @@ export default function Game() {
               <span className="minimap-title">NETWORK OVERVIEW</span>
             </button>
           </div>
+          {economyOpen && (
+            <EconomyOffice
+              sim={sim.current}
+              selected={selected}
+              select={setSelected}
+              close={() => setEconomyOpen(false)}
+              changed={() => setTick((t) => t + 1)}
+            />
+          )}
           {dispatcherOpen && (
             <Dispatcher
               key={selected}
@@ -853,7 +883,7 @@ export default function Game() {
           <p className="engine-subtitle">
             {selected === 10
               ? 'Mountain express'
-              : nodeAt(sim.current.network, route[0]).cargo + ' service'}{' '}
+              : WAGONS[sim.current.economy.services[selected].wagon].label}{' '}
             <span>·</span> Meridian collection
           </p>
           <div className="train-actions">
@@ -886,7 +916,7 @@ export default function Game() {
             <div>
               <span className="eyebrow">Load factor</span>
               <strong>
-                {train.load}
+                {Math.round(train.load)}
                 <small> %</small>
               </strong>
             </div>
@@ -946,7 +976,7 @@ export default function Game() {
               className="add-car"
               disabled={
                 train.cars >= 6 ||
-                sim.current.treasury < 8500 ||
+                !sim.current.canAfford(8500) ||
                 train.motion.started ||
                 train.motion.reversed
               }
@@ -1069,6 +1099,7 @@ export default function Game() {
                   onClick={() => {
                     setEditorOpen(false);
                     setDispatcherOpen(false);
+                    setEconomyOpen(false);
                     const fresh = new Simulation();
                     sim.current.restore(fresh.save());
                     sim.current.paused = false;

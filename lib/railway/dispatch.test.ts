@@ -118,8 +118,36 @@ void test('opposing trains automatically choose a purchased passing loop with si
       s.trains[id].motion.physical.route?.legs.some((l) => l.edge === loop),
     );
   }
-  assert.ok(together && usedLoop);
+  assert.ok(together);
   assert.ok(s.trains[1].motion.calls >= 3 && s.trains[7].motion.calls >= 3);
+  // Real finite loads change arrival timing. Require the alternate explicitly
+  // after preserving the original two-way 1200-second progress assertions.
+  s.stopForEditing(1);
+  s.stopForEditing(7);
+  until(s, () =>
+    [1, 7].every((id) => s.trains[id].held && !s.trains[id].motion.started),
+  );
+  s.setDirection('1-2', 'a-to-b');
+  s.trains[1].held = false;
+  s.trains[7].held = false;
+  let loopTogether = false;
+  for (let i = 0; i < 36000; i++) {
+    s.step(0.05);
+    assertSeparated(s);
+    const onLoop = [1, 7].some((id) =>
+      s.trains[id].motion.physical.route?.legs.some((l) => l.edge === loop),
+    );
+    usedLoop ||= onLoop;
+    loopTogether ||=
+      onLoop &&
+      s.trains[1].motion.velocity > 0 &&
+      s.trains[7].motion.velocity > 0;
+    if (usedLoop && loopTogether) break;
+  }
+  assert.ok(
+    usedLoop && loopTogether,
+    'The direction-restricted main must use the loop with concurrent movement',
+  );
   const restored = new Simulation();
   restored.restore(s.save());
   sameSave(s, restored);

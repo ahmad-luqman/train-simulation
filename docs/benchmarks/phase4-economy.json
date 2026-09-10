@@ -1,0 +1,334 @@
+{
+  "measuredAt": "2026-09-10T17:11:10.997Z",
+  "platform": "darwin arm64",
+  "cpu": "Apple M4 Max",
+  "scenario": "Default mixed fleet, three accepted raw-material contracts, two 1800-second windows",
+  "simulatedSeconds": 3600,
+  "milliseconds": 16094.064083,
+  "millisecondsPerTick": 0.22352866781944444,
+  "cash": 543145,
+  "debt": 0,
+  "accounts": {
+    "revenue": 139080,
+    "expenses": 20935,
+    "profit": 118145
+  },
+  "entries": 2280,
+  "contracts": [
+    {
+      "id": 1,
+      "cargo": "timber",
+      "destination": 7,
+      "required": 36,
+      "delivered": 36,
+      "deadline": 1800,
+      "acceptedAt": 0,
+      "afterEntry": 1,
+      "reward": 8000,
+      "penalty": 1000,
+      "status": "completed"
+    },
+    {
+      "id": 2,
+      "cargo": "grain",
+      "destination": 4,
+      "required": 36,
+      "delivered": 36,
+      "deadline": 1800,
+      "acceptedAt": 0,
+      "afterEntry": 1,
+      "reward": 8000,
+      "penalty": 1000,
+      "status": "completed"
+    },
+    {
+      "id": 3,
+      "cargo": "coal",
+      "destination": 4,
+      "required": 36,
+      "delivered": 36,
+      "deadline": 1800,
+      "acceptedAt": 0,
+      "afterEntry": 1,
+      "reward": 8000,
+      "penalty": 1000,
+      "status": "completed"
+    }
+  ],
+  "created": {
+    "passengers": 3518,
+    "timber": 266,
+    "grain": 444,
+    "coal": 306,
+    "lumber": 84,
+    "flour": 42,
+    "goods": 126
+  },
+  "processingInputs": {
+    "passengers": 0,
+    "timber": 84,
+    "grain": 42,
+    "coal": 126,
+    "lumber": 0,
+    "flour": 0,
+    "goods": 0
+  },
+  "consumed": {
+    "passengers": 1950,
+    "timber": 0,
+    "grain": 0,
+    "coal": 0,
+    "lumber": 44,
+    "flour": 0,
+    "goods": 42
+  },
+  "windows": [
+    [
+      {
+        "id": 0,
+        "calls": 3,
+        "delivered": 126
+      },
+      {
+        "id": 1,
+        "calls": 3,
+        "delivered": 126
+      },
+      {
+        "id": 2,
+        "calls": 4,
+        "delivered": 168
+      },
+      {
+        "id": 3,
+        "calls": 2,
+        "delivered": 42
+      },
+      {
+        "id": 4,
+        "calls": 1,
+        "delivered": 42
+      },
+      {
+        "id": 5,
+        "calls": 3,
+        "delivered": 126
+      },
+      {
+        "id": 6,
+        "calls": 4,
+        "delivered": 86
+      },
+      {
+        "id": 7,
+        "calls": 4,
+        "delivered": 168
+      },
+      {
+        "id": 8,
+        "calls": 3,
+        "delivered": 126
+      },
+      {
+        "id": 9,
+        "calls": 3,
+        "delivered": 0
+      },
+      {
+        "id": 10,
+        "calls": 2,
+        "delivered": 84
+      },
+      {
+        "id": 11,
+        "calls": 3,
+        "delivered": 126
+      }
+    ],
+    [
+      {
+        "id": 0,
+        "calls": 5,
+        "delivered": 210
+      },
+      {
+        "id": 1,
+        "calls": 6,
+        "delivered": 252
+      },
+      {
+        "id": 2,
+        "calls": 6,
+        "delivered": 252
+      },
+      {
+        "id": 3,
+        "calls": 5,
+        "delivered": 126
+      },
+      {
+        "id": 4,
+        "calls": 2,
+        "delivered": 42
+      },
+      {
+        "id": 5,
+        "calls": 6,
+        "delivered": 252
+      },
+      {
+        "id": 6,
+        "calls": 6,
+        "delivered": 128
+      },
+      {
+        "id": 7,
+        "calls": 7,
+        "delivered": 294
+      },
+      {
+        "id": 8,
+        "calls": 6,
+        "delivered": 252
+      },
+      {
+        "id": 9,
+        "calls": 6,
+        "delivered": 42
+      },
+      {
+        "id": 10,
+        "calls": 5,
+        "delivered": 210
+      },
+      {
+        "id": 11,
+        "calls": 6,
+        "delivered": 252
+      }
+    ]
+  ],
+  "services": [
+    {
+      "name": "Ouray",
+      "wagon": "coaches",
+      "calls": 5,
+      "delivered": 210,
+      "revenue": 9450,
+      "expenses": 1348,
+      "profit": 8102,
+      "emptyRuns": 0
+    },
+    {
+      "name": "Commodore Vanderbilt",
+      "wagon": "coaches",
+      "calls": 6,
+      "delivered": 252,
+      "revenue": 11340,
+      "expenses": 1469,
+      "profit": 9871,
+      "emptyRuns": 0
+    },
+    {
+      "name": "Frontier Belle",
+      "wagon": "coaches",
+      "calls": 6,
+      "delivered": 252,
+      "revenue": 11340,
+      "expenses": 1431,
+      "profit": 9909,
+      "emptyRuns": 0
+    },
+    {
+      "name": "Copper Creek",
+      "wagon": "hopper",
+      "calls": 5,
+      "delivered": 126,
+      "revenue": 16190,
+      "expenses": 1466,
+      "profit": 14724,
+      "emptyRuns": 3
+    },
+    {
+      "name": "Golden Valley",
+      "wagon": "hopper",
+      "calls": 2,
+      "delivered": 42,
+      "revenue": 10520,
+      "expenses": 1088,
+      "profit": 9432,
+      "emptyRuns": 1
+    },
+    {
+      "name": "Silver Arrow",
+      "wagon": "coaches",
+      "calls": 6,
+      "delivered": 252,
+      "revenue": 11340,
+      "expenses": 1446,
+      "profit": 9894,
+      "emptyRuns": 0
+    },
+    {
+      "name": "Timberline",
+      "wagon": "flat",
+      "calls": 6,
+      "delivered": 128,
+      "revenue": 18500,
+      "expenses": 1517,
+      "profit": 16983,
+      "emptyRuns": 2
+    },
+    {
+      "name": "Royal Meridian",
+      "wagon": "coaches",
+      "calls": 7,
+      "delivered": 294,
+      "revenue": 13230,
+      "expenses": 1580,
+      "profit": 11650,
+      "emptyRuns": 0
+    },
+    {
+      "name": "Iron Horse",
+      "wagon": "coaches",
+      "calls": 6,
+      "delivered": 252,
+      "revenue": 11340,
+      "expenses": 1531,
+      "profit": 9809,
+      "emptyRuns": 0
+    },
+    {
+      "name": "Red Mesa",
+      "wagon": "box",
+      "calls": 6,
+      "delivered": 42,
+      "revenue": 5040,
+      "expenses": 1457,
+      "profit": 3583,
+      "emptyRuns": 5
+    },
+    {
+      "name": "Alpine Monarch",
+      "wagon": "coaches",
+      "calls": 5,
+      "delivered": 210,
+      "revenue": 9450,
+      "expenses": 1328,
+      "profit": 8122,
+      "emptyRuns": 0
+    },
+    {
+      "name": "Northern Star",
+      "wagon": "coaches",
+      "calls": 6,
+      "delivered": 252,
+      "revenue": 11340,
+      "expenses": 1554,
+      "profit": 9786,
+      "emptyRuns": 0
+    }
+  ],
+  "scope": "Headless simulation and economy reconciliation only. Independent all-vehicle separation is checked in the full regression suite; this is not a browser/GPU baseline."
+}

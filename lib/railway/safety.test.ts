@@ -1,3 +1,4 @@
+import { locomotives } from './data';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { gunzipSync } from 'node:zlib';
@@ -82,6 +83,12 @@ void test('C1: depot admission, fresh saves and reset never render overlapping q
 });
 void test('R1: all twelve simultaneous services deliver in 1800 seconds and continue through a second 1800-second window', () => {
   const s = new Simulation();
+  // Preserve the all-services delivery gate using finite passenger inventories.
+  // Mixed freight also has an independent progress/conservation soak.
+  s.economy.services.forEach((service) => (service.wagon = 'coaches'));
+  s.services = locomotives.map((l, id) =>
+    planService(s.network, id, `${l.name} service`, l.route, 3.5),
+  );
   let maximumMoving = 0;
   for (let i = 0; i < 36000; i++) {
     s.step(0.05);
@@ -116,7 +123,7 @@ void test('R1: all twelve simultaneous services deliver in 1800 seconds and cont
   );
   assert.equal(
     s.treasury,
-    425000 + s.trains.reduce((n, t) => n + t.revenue, 0),
+    s.economy.ledger.reduce((n, entry) => n + entry.amount, 0),
   );
   assert.ok(s.events.length <= 20);
   assert.equal(

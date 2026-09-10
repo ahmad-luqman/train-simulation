@@ -734,9 +734,19 @@ export class RailwayWorld {
     this.sceneryGroup.add(rocks);
   }
   private syncCars(id: number) {
+    const wagon = this.sim.economy.services[id].wagon;
+    if (this.cars[id][1] && this.cars[id][1].userData.wagon !== wagon) {
+      for (const removed of this.cars[id].splice(1)) {
+        removed.removeFromParent();
+        removed.traverse((o) => {
+          if (o instanceof THREE.Mesh && o.geometry.type !== 'BoxGeometry')
+            o.geometry.dispose();
+        });
+      }
+    }
     const count = this.sim.trains[id].cars + 1;
     while (this.cars[id].length < count) {
-      const c = carriage(locomotives[id].color, this.cars[id].length);
+      const c = carriage(locomotives[id].color, this.cars[id].length, wagon);
       c.userData.trainId = id;
       batchScenery(c, new Set());
       c.visible = this.sim.visible(this.sim.trains[id]);

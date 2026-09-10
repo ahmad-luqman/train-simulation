@@ -2,7 +2,7 @@
 
 **Purpose:** Turn the current railway sandbox into a visually rich management game with meaningful construction, dispatch, economic, and fleet decisions.
 **Baseline:** Current repository at `315b7fb`, reviewed 9 September 2026.
-**Status:** Phases 1–3 and the corrective **Phase 3A implementation are delivered**, followed by the requested [expanded valley and locomotive-leading station redesign](EXPANDED_VALLEY.md). [Phase 3A safety notes](PHASE_3A_SAFETY.md) record the plan, physical topology, automated acceptance and measured headless performance. The [audit of `b1c2d05`](PHASE_3_COLLISION_AUDIT.md) remains preserved as regression evidence. All twelve services deliver in the 1,800-second run and continue through a second 1,800-second window. **Browser/visual acceptance, independent review and the Phase 0 GPU baseline remain open; Phase 4 remains gated on that remaining evidence.** Phases 4–7 remain planned.
+**Status:** Phases 1–3 and the corrective **Phase 3A implementation are delivered**, followed by the requested [expanded valley and locomotive-leading station redesign](EXPANDED_VALLEY.md). [Phase 3A safety notes](PHASE_3A_SAFETY.md) record the plan, physical topology, automated acceptance and measured headless performance. The [audit of `b1c2d05`](PHASE_3_COLLISION_AUDIT.md) remains preserved as regression evidence. All twelve services deliver in the 1,800-second run and continue through a second 1,800-second window. **Phase 4 runtime implementation is delivered:** finite inventories, three supply chains, compatible freight wagons, operating accounts, contracts, financing and version 6 saves. See [Phase 4 plan and evidence](PHASE_4_ECONOMY.md). The user explicitly requested Phase 4 implementation on 10 September 2026; browser/visual acceptance, independent review and the Phase 0 GPU baseline remain open and are not certified by the automated results. Phases 5–7 remain planned.
 
 ## Recommended direction
 
@@ -26,10 +26,10 @@ The original baseline had these limitations; Phase 2 resolves network ownership 
 
 - **Network ownership — resolved in Phase 2:** Shared sampled geometry owns track lengths and prices; services store exact edge itineraries, including parallel tracks.
 - **Movement and dispatch — Phase 3A implemented:** Physical berths, running-line ports, tangent-connected turnouts and controlled crossovers share geometry with rendering. Geometry-derived interlocking, swept vehicle envelopes, protected depot admission, automatic alternate routing and bounded recovery address the audited collisions/stalls. Simultaneous full-fleet regression and disruption recovery pass; browser acceptance remains open.
-- **Economy:** Cargo loads are generated rather than taken from inventories. Deliveries create revenue without recurring fuel, maintenance, staff, or infrastructure costs.
-- **Fleet:** Locomotives share the same underlying model design with different liveries. Wagon purchases change a count rather than a cargo-specific consist.
+- **Economy — Phase 4 implemented:** Finite source inventories and destination demand govern loading and payment. Three processors, town consumption and passenger queues conserve units; fuel, crew, maintenance, infrastructure, financing and contracts reconcile through a single cash ledger.
+- **Fleet:** Locomotive variety remains Phase 5 work. Phase 4 adds compatible coaches, flat wagons, hoppers and box wagons with matching procedural silhouettes; purchasing a wagon adds capacity in its configured family.
 - **Presentation:** Terrain, buildings, water, and smoke are simple procedural geometry. Graphics presets mainly change resolution and shadows.
-- **Persistence and verification — Phase 3A implemented:** Version 5 saves persist the expanded map, through-platform orientation, physical queues, berths, routes and authority; detached restore validates geometry, stopping protection and service order. Versions 1–4 are explicitly rejected without mutation or relocation because their positions lack physical berth/route authority. Original browser slots remain preserved. Headless performance is recorded; GPU/browser evidence remains open.
+- **Persistence and verification — Phase 3A implemented:** Version 6 saves extend version 5 with inventory, manifests, contract progress and auditable finances; version 5 migrates without relocating vehicles. Saves persist the expanded map, through-platform orientation, physical queues, berths, routes and authority; detached restore validates geometry, stopping protection and service order. Versions 1–4 are explicitly rejected without mutation or relocation because their positions lack physical berth/route authority. Original browser slots remain preserved. Headless performance is recorded; GPU/browser evidence remains open.
 
 ## Phase overview
 
@@ -41,8 +41,8 @@ Effort is relative complexity, not a calendar commitment. Select test hardware a
 | 1     | A much better looking and sounding valley               | High                 | 0                           | Large  |
 | 2     | Player-built track and configurable services            | High                 | 0                           | Large  |
 | 3     | Believable train movement and useful dispatch decisions | High                 | 2                           | Large  |
-| 3A    | Physical collision safety and automatic safe routing    | Required; next       | Initial Phase 3             | Large  |
-| 4     | Supply chains, contracts, and a real operating economy  | High; gated          | 2 and accepted 3A           | Large  |
+| 3A    | Physical collision safety and automatic safe routing    | Runtime delivered    | Initial Phase 3             | Large  |
+| 4     | Supply chains, contracts, and a real operating economy  | Runtime delivered    | 2 and Phase 3A              | Large  |
 | 5     | Distinct locomotives, maintenance, and depot logistics  | Medium               | 3 and 4                     | Large  |
 | 6     | Campaign progression and a world that responds          | Medium               | 1, 4, and 5                 | Large  |
 | 7     | Performance, usability, balancing, and release quality  | Required for release | All chosen release features | Large  |
@@ -138,7 +138,7 @@ Export game assets as glTF/GLB and verify materials and animation in the actual 
 
 ## Phase 3 — Make dispatching and movement matter
 
-**Status: initial Phase 3 defects corrected by Phase 3A.** The [historical audit](PHASE_3_COLLISION_AUDIT.md) remains reproducible from preserved fixtures. See [current implementation and acceptance](PHASE_3A_SAFETY.md); visual/browser and independent review gates remain open before Phase 4.
+**Status: initial Phase 3 defects corrected by Phase 3A.** The [historical audit](PHASE_3_COLLISION_AUDIT.md) remains reproducible from preserved fixtures. See [current implementation and acceptance](PHASE_3A_SAFETY.md); visual/browser and independent review gates remain open. Phase 4 runtime work proceeded under the user’s explicit subsequent instruction; it does not close these checks.
 
 **Player benefit:** Congestion has understandable causes, and infrastructure or scheduling changes produce visible improvements.
 
@@ -165,7 +165,7 @@ Export game assets as glTF/GLB and verify materials and animation in the actual 
 
 **Implementation complete; automated gates pass.** The work packages below are the retained specification. [Implementation/evidence](PHASE_3A_SAFETY.md) and [original benchmark](benchmarks/phase3a.json) and [expanded-world benchmark](benchmarks/expanded-valley.json) describe the result and the remaining browser, independent-review and GPU checks.
 
-**Priority:** Required before Phase 4. **Status:** Planned; no corrective runtime work is claimed by the audit update.
+**Priority:** Required physical foundation for Phase 4. **Status:** Corrective runtime implementation delivered; the historical audit is retained, and the remaining acceptance checks above stay open.
 **Evidence:** [Collision and routing audit of `b1c2d05`](PHASE_3_COLLISION_AUDIT.md).
 **Player benefit:** Trains never occupy the same physical space, and feasible services progress without repeated manual rescue.
 
@@ -253,13 +253,15 @@ Treat three requirements separately: **collision detection** checks physical occ
 - Record browser interaction and visual evidence for initial placement, the reproduced loop approach, a busy junction, terminal reversal and a small-screen dispatcher. Run this when browser testing is explicitly authorized by the active environment; keep acceptance open if it has not been performed.
 - Measure collision/interlocking cost and full scene performance on the Phase 0 hardware profile before increasing train count. A stalled railway is not a valid throughput or performance benchmark.
 
-**Completion rule:** Close C1–C4, N1, R1–R3, P1 and T1 from the audit with evidence. Phase 3 is not complete because reservations are unique, one train delivered, or all existing tests pass. Only then proceed to Phase 4.
+**Completion rule:** Close C1–C4, N1, R1–R3, P1 and T1 from the audit with evidence. Phase 3 is not complete because reservations are unique, one train delivered, or all existing tests pass. The user subsequently authorized Phase 4 runtime implementation while the remaining browser/GPU and independent-review evidence stays open; those checks remain required for release acceptance.
 
 **Boundary:** This correction does not require derailments, impact physics, a rigid-body physics engine or detailed cab controls. Correct spatial protection, understandable interlocking and feasible automatic routing are required now. Advanced depot maintenance remains in Phase 5; basic safe staging cannot be deferred there.
 
 ## Phase 4 — Add a real transport economy
 
-**Entry gate:** Phase 3A collision safety and automatic-routing acceptance must pass first. Economy design can continue, but runtime economy expansion must not mask or inherit an unresolved stalled/colliding railway.
+**Implementation:** [Phase 4 implementation plan, rules and verification](PHASE_4_ECONOMY.md). All 75 automated tests pass, including both original full-fleet delivery windows and a separate mixed-freight conservation/progress soak.
+
+**Entry-gate disposition:** The user explicitly directed Phase 4 implementation after the Phase 3A automated safety work. Browser/GPU and independent-review acceptance remain open. Economy work preserves the physical collision assertions and full-fleet progress gates; it does not substitute money earned for geometric safety.
 
 **Player benefit:** Routes exist to solve demand, and profits reflect service quality and operating choices.
 
@@ -381,14 +383,18 @@ Move existing functionality gradually from `lib/railway/simulation.ts`, `lib/rai
 
 ## Next implementation backlog
 
-The corrective runtime work and automated regression matrix are implemented. The remaining acceptance backlog is:
+The corrective dispatch and Phase 4 runtime work are implemented. The remaining acceptance backlog is:
 
 1. With explicit browser-testing authorization, record initial placement, the reproduced loop approach, busy junctions, terminal reversal and small-screen dispatcher interactions.
 2. Obtain an independent review of geometry, resource-release and persistence invariants; preserve the C1/C2/P1 fixtures and the simultaneous fleet tests.
 3. Record the Phase 0 browser/GPU hardware baseline and compare draw calls, frame cost and input responsiveness with the expanded physical station geometry. The headless dispatch measurements do not replace this.
-4. Close Phase 3/3A acceptance, then implement the first Phase 4 supply chain and operating ledger.
+4. Playtest the Phase 4 office, contract flows, wagon silhouettes, small-screen controls and version 5 migration. Review balancing using the [mixed-fleet benchmark](benchmarks/phase4-economy.json); then scope Phase 5 locomotive and maintenance roles.
 
-The original 1,800-second all-twelve-services test is restored alongside isolated tests. The continuation soak adds another 1,800 seconds and requires another delivery from every service, with independent all-vehicle separation checked every tick. Physical station approaches and slow curves add real journey distance: a speculative 900-second per-call bound was not retained. No original assertion was removed to accommodate that distance. The held-train scenario declares a 1,800-second recovery window. Opposing concurrency uses the longer Riverside corridor; following concurrency uses a declared 150-unit flat corridor fixture because short starter corridors can legitimately clear one shared throat before admitting the next train. Those scenarios retain geometric separation and simultaneous-running assertions.
+The original 1,800-second all-twelve-services test is preserved alongside isolated tests, now using finite passenger queues on the original service routes. Its cash assertion includes all ledger entries because operating expenses are real. A separate default mixed-freight test requires each of the twelve services to make calls in both windows and every processor to receive cargo, with independent all-vehicle separation every tick. Sparse freight delivery opportunities are not used to weaken the original passenger delivery gate.
+
+The original two-way passing-loop fixture retains its simultaneous movement and three-calls-per-train assertions at 1,200 seconds. Finite load timing can safely serialize the main without needing the loop; a subsequent direction restriction explicitly requires automatic loop use and concurrent movement, still with geometric separation and restore checks.
+
+The continuation soak adds another 1,800 seconds and requires another delivery from every service, with independent all-vehicle separation checked every tick. Physical station approaches and slow curves add real journey distance: a speculative 900-second per-call bound was not retained. No original assertion was removed to accommodate that distance. The held-train scenario declares a 1,800-second recovery window. Opposing concurrency uses the longer Riverside corridor; following concurrency uses a declared 150-unit flat corridor fixture because short starter corridors can legitimately clear one shared throat before admitting the next train. Those scenarios retain geometric separation and simultaneous-running assertions.
 
 ## Features to defer
 

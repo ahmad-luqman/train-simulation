@@ -1,3 +1,4 @@
+import type { Wagon } from './economy';
 import * as THREE from 'three';
 const mats = new Map<string, THREE.MeshStandardMaterial>();
 export function material(color: string) {
@@ -89,27 +90,47 @@ export function locomotive(color: string, id = 0) {
   g.userData.wheels = wheels;
   return g;
 }
-export function carriage(color: string, index: number) {
+export function carriage(
+  color: string,
+  index: number,
+  wagon: Wagon = 'coaches',
+) {
   const g = new THREE.Group();
   box(g, '#303a33', 0, 0.48, 0, 1.5, 0.2, 2.65);
-  box(
-    g,
-    index === 0 ? color : index % 2 ? '#8b6247' : '#8f5340',
-    0,
-    1.1,
-    0,
-    1.4,
-    1.05,
-    2.45,
-  );
   if (index === 0) {
+    box(g, color, 0, 1.1, 0, 1.4, 1.05, 2.45);
     box(g, '#222e2b', 0, 1.64, 0, 1.2, 0.15, 2.2);
+  } else if (wagon === 'flat') {
+    box(g, '#8b6247', 0, 0.64, 0, 1.4, 0.15, 2.45);
+    for (const x of [-0.65, 0.65])
+      for (const z of [-0.95, 0.95])
+        box(g, '#616b56', x, 1.0, z, 0.08, 0.65, 0.08);
+  } else if (wagon === 'hopper') {
+    for (const x of [-0.65, 0.65])
+      box(g, '#656e60', x, 1.07, 0, 0.12, 0.85, 2.4);
+    for (const z of [-1.14, 1.14])
+      box(g, '#656e60', 0, 1.07, z, 1.4, 0.85, 0.12);
+    box(g, '#38423a', 0, 0.8, 0, 1.18, 0.22, 2.2);
   } else {
+    box(
+      g,
+      wagon === 'box' ? '#9b663e' : index % 2 ? '#8b6247' : '#8f5340',
+      0,
+      1.1,
+      0,
+      1.4,
+      1.05,
+      2.45,
+    );
     box(g, '#4a5147', 0, 1.69, 0, 1.55, 0.19, 2.65);
-    for (const x of [-0.715, 0.715])
-      for (const z of [-0.8, 0, 0.8])
-        box(g, '#d9c99b', x, 1.25, z, 0.025, 0.39, 0.48);
+    for (const x of [-0.715, 0.715]) {
+      if (wagon === 'box') box(g, '#71543e', x, 1.1, 0, 0.025, 0.85, 1.0);
+      else
+        for (const z of [-0.8, 0, 0.8])
+          box(g, '#d9c99b', x, 1.25, z, 0.025, 0.39, 0.48);
+    }
   }
+  g.userData.wagon = wagon;
   for (const x of [-0.77, 0.77])
     for (const z of [-0.85, 0.85]) {
       const m = cylinder(g, '#283a34', x, 0.35, z, 0.29, 0.15);

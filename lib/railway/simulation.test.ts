@@ -1,6 +1,6 @@
 import { assertSeparated } from './test-helpers';
 import { vehicles } from './safety';
-import { edgeAt } from './network';
+import { planService, edgeAt } from './network';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { cities, corridors, locomotives } from './data';
@@ -20,6 +20,10 @@ void test('every service follows a connected closed route', () => {
 void test('every locomotive completes sustained service and revenue reconciles under dispatch', () => {
   for (let id = 0; id < locomotives.length; id++) {
     const sim = new Simulation();
+    sim.economy.services.forEach((service) => (service.wagon = 'coaches'));
+    sim.services = locomotives.map((l, id) =>
+      planService(sim.network, id, `${l.name} service`, l.route, 3.5),
+    );
     sim.trains.forEach((t) => {
       t.held = t.id !== id;
     });
@@ -34,7 +38,7 @@ void test('every locomotive completes sustained service and revenue reconciles u
     );
     assert.equal(
       sim.treasury,
-      425000 + sim.trains.reduce((n, t) => n + t.revenue, 0),
+      sim.economy.ledger.reduce((n, entry) => n + entry.amount, 0),
     );
     assert.ok(sim.events.length <= 20);
   }

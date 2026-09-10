@@ -16,6 +16,7 @@ Open the local URL printed by the server (normally http://localhost:3000).
 ```sh
 npm test           # Railway simulation regression tests
 npm run benchmark:dispatch # Reproducible headless fleet/disruption timings
+npm run benchmark:economy  # Mixed-fleet economy, contracts and account totals
 npm run typecheck  # TypeScript
 npm run lint       # App code; generated component catalog is excluded
 npm run build      # Production Cloudflare Worker + client bundle
@@ -29,7 +30,12 @@ npm start          # Preview the production Worker locally
 - **Follow train** follows the selected locomotive in either mode.
 - Drag to pan in Iso; drag to orbit and right-drag to pan in 3D. Scroll or pinch to zoom.
 - Use **Hold / Release** to dispatch individual trains. Physical blocks and junction movements protect the complete consist.
-- Passenger and freight deliveries earn money. Spend $8,500 on an additional wagon at a station while operating forward, up to six cars per train. The longer consist needs a clear approach.
+- Deliver real passengers and freight into destination demand to earn the displayed tariff. Spend $8,500 on an additional wagon at a station while operating forward, up to six cars per train. Its cargo family follows the service configuration, and the longer consist needs a clear approach.
+- **Economy** opens inventory and demand maps, supply-chain instructions, cargo manifests, wagon refitting, service accounts, local contracts, financing and the complete cash ledger. Coaches carry passengers; flat wagons carry timber/lumber; hoppers carry coal/grain; box wagons carry flour/goods.
+- Copper Creek starts on the Coalhaven–Grand Junction coal shuttle, Golden Valley on the Millbrook–Grand Junction grain shuttle, Timberline carries timber to the Riverside sawmill and lumber onward, and Red Mesa carries processed goods from Grand Junction. Other trains run passenger services.
+- Loading uses available source stock, destination demand, wagon capacity and configured dwell (12 units/second). Rejected cargo stays aboard and earns nothing until accepted. Deliver it before changing a service or refitting. Consumer stock stays in town rather than becoming another paid return load.
+- Fuel, crew, maintenance and infrastructure are billed each simulation minute. **Accounts** separates revenue, expenses, operating profit, cash and debt. Borrow up to $100,000 at 0.2% interest per simulation minute, or select **Sandbox · unlimited purchasing funds**. Cash overdrafts block standard purchases but do not stop trains.
+- **Contracts** start their simulation-time deadlines when accepted. Complete the stated delivery for a reward; a missed deadline charges the visible fee and allows another attempt. Pause also pauses production, bills and deadlines.
 - **Save / Load** stores one railway on the current browser and device. **New railway** resets the active simulation while preserving the saved game.
 - Change simulation speed, graphics quality, and city labels from the visible controls. **Atmosphere** opens the continuous day/night cycle, time presets, and gesture-started spatial audio with three volume controls.
 - **Trackside** watches the selected train pass. **Photo** freezes the railway and hides the interface; **Save image** exports a PNG. Escape returns to the map overview.
@@ -64,7 +70,9 @@ The Alpine Monarch showcase locomotive and tender use three embedded-material GL
 
 - `lib/railway/data.ts`: cities, corridors, and locomotive definitions.
 - `lib/railway/network.ts`, `terrain.ts`: stable network records, shared sampled geometry, costs, clearance and route planning.
-- `lib/railway/simulation.ts`: fixed ticks, construction commands, services, economics, resource ownership, undo and validated version 5 saves.
+- `lib/railway/simulation.ts`: fixed ticks, construction commands, services, resource ownership, undo and validated version 6 saves.
+- `lib/railway/economy.ts`: finite stock, production/processing/consumption, manifests, tariffs, costs, contracts, debt and journal validation.
+- `components/railway/economy-office.tsx`: supply/demand map, wagon configuration, service accounts, contracts and finance controls.
 - `lib/railway/map.ts`: shared world, construction and camera extents.
 - `lib/railway/topology.ts`: physical ports, shared station throats, through platforms, return loops, crossovers and geometry-derived conflicts.
 - `lib/railway/traffic.ts`: route admission, movement authority, fair retries, safe recovery and physical restore validation.
@@ -91,7 +99,9 @@ The corrective [Phase 3A implementation](docs/PHASE_3A_SAFETY.md) addresses the 
 A [Safari visual review](docs/EXPANDED_VALLEY.md) checked the overview and improved both track-plan panels. Sustained train/camera interaction, full WebGL visual acceptance, accessibility and the Phase 0 GPU baseline remain open. Headless tests and timings do not certify those checks.
 Optional WebMCP tools (`get_railway_state`, `follow_train`, `set_train_hold`) are registered only when `document.modelContext` is available. No supported browser validation context was available during this implementation, so these experimental integrations have not been verified end to end. Unsupported browsers run the normal interface unchanged.
 
-Version 5 saves persist the expanded world, through-platform orientation, depot queues, operational routes and authority. Load searches v5, then the preserved v4/v3/v2/v1 slots. Older layouts are rejected atomically with an explanation; no legacy trains are silently relocated or stretched onto the larger map. Start a new railway to use this layout. New railway preserves every saved slot. Current saves restore only after detached geometry, ownership, braking and service-order validation.
+Version 6 saves add inventories, manifests, wagon families, production counters, contracts, debt and an auditable ledger to the expanded world and physical authority. Load searches v6, then the preserved v5/v4/v3/v2/v1 slots. Version 5 migrates with the same vehicle positions, cash and historic train totals; its generated load percentages are cleared because historic cargo had no inventory provenance. The first real manifest loads on a subsequent departure. Versions 1–4 use incompatible layouts and are rejected atomically with an explanation; no trains are silently relocated or stretched onto the larger map. Start a new railway to use this layout. New railway preserves every saved slot. Current saves restore only after detached geometry, ownership, braking and service-order validation.
+
+See [Phase 4 economy plan and verification](docs/PHASE_4_ECONOMY.md) for the complete operating rules and acceptance evidence.
 
 See [expanded valley and station notes](docs/EXPANDED_VALLEY.md) for the map redesign and locomotive-leading operation.
 

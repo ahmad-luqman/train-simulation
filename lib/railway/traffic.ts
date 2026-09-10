@@ -1,3 +1,4 @@
+import { loadCargo, unloadCargo } from './economy';
 import { locomotives } from './data';
 import {
   advanceVelocity,
@@ -531,6 +532,7 @@ export class Traffic {
           p.stopTarget = this.topology.length(sections) - FRONT;
           p.blockers = [];
           t.motion.reversed = false;
+          loadCargo(this.sim, t, from, route.to);
           t.motion.started = true;
           t.distance = 0.000001;
           for (const i of this.intervals(route).filter((i) =>
@@ -837,28 +839,8 @@ export class Traffic {
     if (route.stop) {
       p.recoveryAttempts = 0;
       p.lastCallAt = this.sim.elapsed;
-      const amount = Math.round((t.cars * 18 * t.load) / 100),
-        income = Math.round(
-          amount *
-            (40 +
-              route.legs.reduce(
-                (n, l) =>
-                  n +
-                  this.sim.network.edges.find((e) => e.id === l.edge)!.length,
-                0,
-              ) *
-                1.7),
-        );
-      t.delivered += amount;
-      t.revenue += income;
-      this.sim.delivered += amount;
-      this.sim.treasury += income;
+      unloadCargo(this.sim, t, route.to);
       m.calls++;
-      this.sim.events.unshift(
-        `${locomotives[t.id].name} → ${nodeAt(this.sim.network, route.to).name} · ${amount} delivered · +$${income.toLocaleString('en-US')}`,
-      );
-      this.sim.events = this.sim.events.slice(0, 20);
-      t.load = 60 + ((t.delivered + t.id * 3) % 37);
       t.dwell = this.sim.services[t.id].dwell;
       for (const record of this.sim.construction)
         if (record.station === `station-${route.to}` && !record.reversed)
