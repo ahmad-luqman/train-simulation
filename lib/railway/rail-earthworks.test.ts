@@ -1,3 +1,4 @@
+import { tunnelAt } from './structures';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { Simulation } from './simulation';
@@ -36,6 +37,12 @@ void test('Coalhaven station rails and all physical alignments clear the actual 
   for (const section of sim.topology.sections.values()) {
     for (let d = 0; d <= section.length; d += 0.75) {
       const { p, angle } = sample(section, d);
+      const index = section.cumulative.findIndex((at) => at >= d);
+      // Tunnel roof is intentionally retained; clearance applies to every open alignment.
+      if (
+        tunnelAt(section.points, Math.max(0, index), section.kind === 'running')
+      )
+        continue;
       for (const offset of [-1.35, 0, 1.35]) {
         const y = groundHeight(
           ground,

@@ -1,3 +1,4 @@
+import { ENGINES } from './fleet';
 import type { Wagon } from './economy';
 import * as THREE from 'three';
 const mats = new Map<string, THREE.MeshStandardMaterial>();
@@ -56,11 +57,21 @@ export function cylinder(
   parent.add(m);
   return m;
 }
-export function locomotive(color: string, id = 0) {
+export function locomotive(color: string, id = 0, engine = id) {
+  const spec = ENGINES[engine];
+  const [leading, drivers, trailing] = spec.type
+    .split(' ')[0]
+    .split('-')
+    .map(Number);
+  const express = spec.role.toLowerCase().includes('express');
   const g = new THREE.Group();
   g.userData.trainId = id;
   box(g, '#292f2e', 0, 0.52, 0, 1.45, 0.25, 3.8);
-  cylinder(g, color, 0, 1.18, -0.4, 0.57, 2.5, Math.PI / 2);
+  cylinder(g, color, 0, 1.18, -0.4, express ? 0.51 : 0.59, 2.5, Math.PI / 2);
+  if (express) box(g, color, 0, 0.92, -0.4, 1.3, 0.35, 2.5);
+  if (spec.traction >= 110)
+    for (const x of [-0.6, 0.6])
+      cylinder(g, '#40544c', x, 0.9, -1.4, 0.22, 0.55, Math.PI / 2);
   cylinder(g, '#283630', 0, 1.2, -1.71, 0.48, 0.12, Math.PI / 2);
   box(g, color, 0, 1.38, 1.15, 1.42, 1.42, 1.05);
   box(g, '#243f3a', 0, 2.14, 1.15, 1.7, 0.16, 1.3);
@@ -71,12 +82,26 @@ export function locomotive(color: string, id = 0) {
   cylinder(g, '#cbb173', 0, 1.87, -0.15, 0.2, 0.3);
   cylinder(g, '#e6c774', 0, 1.35, -1.8, 0.14, 0.1, Math.PI / 2);
   const wheels: THREE.Object3D[] = [];
+  const axles = [
+    ...Array.from({ length: leading / 2 }, (_, i) => ({
+      z: -1.6 + i * 0.3,
+      radius: 0.23,
+    })),
+    ...Array.from({ length: drivers / 2 }, (_, i) => ({
+      z: -0.95 + (i * 1.9) / Math.max(1, drivers / 2 - 1),
+      radius: express ? 0.46 : 0.37,
+    })),
+    ...Array.from({ length: trailing / 2 }, (_, i) => ({
+      z: 1.35 + i * 0.28,
+      radius: 0.23,
+    })),
+  ];
   for (const x of [-0.76, 0.76])
-    for (const z of [-1.15, -0.35, 0.45, 1.22]) {
+    for (const { z, radius } of axles) {
       const wheel = new THREE.Group();
-      wheel.position.set(x, 0.5, z);
+      wheel.position.set(x, radius + 0.1, z);
       const m = new THREE.Mesh(
-        new THREE.CylinderGeometry(0.4, 0.4, 0.16, 12),
+        new THREE.CylinderGeometry(radius, radius, 0.16, 12),
         material('#283a34'),
       );
       m.rotation.z = Math.PI / 2;
@@ -88,6 +113,7 @@ export function locomotive(color: string, id = 0) {
     }
   for (const x of [-0.87, 0.87]) box(g, '#b2afa0', x, 0.5, 0, 0.06, 0.07, 2.65);
   g.userData.wheels = wheels;
+  g.userData.engine = engine;
   return g;
 }
 export function carriage(

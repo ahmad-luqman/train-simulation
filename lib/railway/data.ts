@@ -6,6 +6,7 @@ export type City = {
   x: number;
   z: number;
   color: string;
+  elevation?: number;
 };
 const originalCities: City[] = [
   {
@@ -79,6 +80,63 @@ export const cities: City[] = originalCities.map((city) => ({
   z: city.z * MAP_SCALE,
 }));
 
+cities.push(
+  {
+    id: 'cedar',
+    name: 'Cedar Falls',
+    cargo: 'Timber',
+    x: -245,
+    z: -155,
+    elevation: 3,
+    color: '#79866c',
+  },
+  {
+    id: 'granite',
+    name: 'Granite Ridge',
+    cargo: 'Coal',
+    x: -265,
+    z: -285,
+    elevation: 5,
+    color: '#8b8b93',
+  },
+  {
+    id: 'summit',
+    name: 'Summit Pass',
+    cargo: 'Passengers',
+    x: -95,
+    z: -320,
+    elevation: 7.3,
+    color: '#9ba8a7',
+  },
+  {
+    id: 'glacier',
+    name: 'Glacier Lake',
+    cargo: 'Passengers',
+    x: 80,
+    z: -300,
+    elevation: 14,
+    color: '#85b9c5',
+  },
+  {
+    id: 'eagle',
+    name: 'Eagle Vale',
+    cargo: 'Timber',
+    x: 240,
+    z: -245,
+    elevation: 8.2,
+    color: '#899472',
+  },
+  {
+    id: 'harbor',
+    name: 'Eastbank Harbor',
+    cargo: 'Goods',
+    x: 290,
+    z: -70,
+    elevation: 4,
+    color: '#c49d79',
+  },
+);
+
 export const corridors: [number, number][] = [
   [0, 1],
   [1, 2],
@@ -93,7 +151,17 @@ export const corridors: [number, number][] = [
   [4, 7],
   [5, 6],
   [6, 7],
+  [0, 8],
+  [8, 9],
+  [9, 10],
+  [10, 11],
+  [11, 12],
+  [12, 13],
+  [13, 7],
+  [1, 10],
+  [2, 12],
 ];
+export const MOUNTAIN_SERVICE = [9, 10, 11, 12, 2, 1, 0, 8];
 export const locomotives = [
   {
     name: 'Ouray',

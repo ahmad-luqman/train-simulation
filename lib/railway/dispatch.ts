@@ -1,5 +1,5 @@
+import { ENGINES, type FleetUnit, UPGRADES } from './fleet';
 import { newPhysicalMotion, type PhysicalMotion } from './traffic';
-import { locomotives } from './data';
 import { METRES_PER_UNIT } from './units';
 export { METRES_PER_UNIT } from './units';
 import {
@@ -92,12 +92,21 @@ export function performance(
   load: number,
   edge: TrackEdge,
   from: number,
+  unit?: FleetUnit,
 ) {
-  const mass = 75 + cars * (16 + load * 0.16);
+  const spec = ENGINES[unit?.engine ?? id];
+  const upgrade = UPGRADES[unit?.upgrade ?? 'none'];
+  const factor = unit
+    ? Math.max(0.4, Math.min(1, unit.condition / 40)) *
+      (unit.fuel < 5 || unit.water < 5 ? 0.55 : 1)
+    : 1;
+  const mass =
+    spec.mass +
+    cars * (16 + load * 0.16) * (unit?.upgrade === 'capacity' ? 1.15 : 1);
   const grade =
     ((edge.points.at(-1)!.y - edge.points[0].y) / edge.length) *
     (from === edge.a ? 1 : -1);
-  const traction = (locomotives[id].speed < 12 ? 85 : 75) / mass;
+  const traction = (spec.traction * upgrade.traction * factor) / mass;
   return {
     mass,
     acceleration: Math.max(
@@ -106,7 +115,7 @@ export function performance(
     ),
     limit:
       Math.min(
-        locomotives[id].speed * 0.25,
+        spec.speed * 0.25 * upgrade.speed * factor,
         Math.sqrt(Math.max(1, edge.radius) * 0.23),
       ) /
       (1 + (cars - 3) * 0.025),

@@ -1,3 +1,5 @@
+import { ENGINES } from './fleet';
+import { tunnelAt, bridgeAt } from './structures';
 import {
   railwayGround,
   groundHeight,
@@ -158,7 +160,8 @@ export class RailwayWorld {
     this.effects = new SteamEffects(this.scene);
     this.scene.add(this.routeHighlight);
     for (let i = 0; i < locomotives.length; i++) {
-      const g = locomotive(locomotives[i].color, i);
+      const engine = this.sim.fleet.units[i].engine;
+      const g = locomotive(ENGINES[engine].color, i, engine);
       this.rememberResources(g);
       const moving = new Set<THREE.Object3D>();
       (g.userData.wheels as THREE.Object3D[]).forEach((w) =>
@@ -378,7 +381,19 @@ export class RailwayWorld {
         node.y - 0.36,
         node.z + Math.sin(angle) * (lead + 25) + Math.cos(angle) * 28,
       );
+      hall.position.y = Math.max(
+        node.y - 0.36,
+        groundHeight(this.groundHeights, hall.position.x, hall.position.z),
+      );
       hall.rotation.y = -angle;
+      if (this.sim.fleet.depots.includes(node.id)) {
+        box(hall, '#596b67', 0, 2, -7, 7, 4, 6);
+        box(hall, '#354943', 0, 4.2, -7, 7.7, 0.4, 6.6);
+        for (const x of [-2, 2])
+          box(hall, '#263d38', x, 1.5, -3.96, 2.2, 3, 0.1);
+        cylinder(hall, '#89785d', 6, 4, -7, 1.5, 2);
+        for (const x of [5, 7]) box(hall, '#4e5648', x, 1.5, -7, 0.25, 3, 0.25);
+      }
       stationKit(
         hall,
         {
@@ -576,7 +591,32 @@ export class RailwayWorld {
           t = curve.getTangentAt(n / length),
           angle = Math.atan2(t.x, t.z);
         ties.push({ p, angle });
-        if (Math.abs(p.x - riverX(p.z)) < 6.1) bridges.push({ p, angle });
+        if (bridgeAt(p)) bridges.push({ p, angle });
+      }
+      const section = this.sim.topology.sections.get(edge.id);
+      if (section?.kind === 'running') {
+        let inside = false;
+        for (let i = 1; i < edge.points.length; i++) {
+          const next = tunnelAt(edge.points, i);
+          if (inside !== next) {
+            const p = edge.points[i],
+              previous = edge.points[i - 1];
+            const portal = new THREE.Group();
+            portal.position.set(p.x, p.y, p.z);
+            portal.rotation.y = Math.atan2(p.x - previous.x, p.z - previous.z);
+            for (const x of [-2, 2])
+              box(portal, '#8c8980', x, 1.25, 0, 0.8, 2.7, 1.5);
+            const arch = new THREE.Mesh(
+              new THREE.TorusGeometry(2, 0.43, 6, 16, Math.PI),
+              material('#a29b89'),
+            );
+            arch.position.y = 2.5;
+            portal.add(arch);
+            box(portal, '#b1a790', 0, 4.6, 0, 5.2, 0.5, 1.6);
+            this.railGroup.add(portal);
+          }
+          inside = next;
+        }
       }
       for (const t of [0.09, 0.91]) {
         const p = curve.getPointAt(t),
@@ -621,15 +661,32 @@ export class RailwayWorld {
           brace.rotation.x = 0.42;
         }
       }
-      if (i % 5 === 0) box(g, '#aaa48b', 0, -1.6, 0, 1.7, 2.8, 1);
+      if (i % 5 === 0) {
+        const drop = Math.max(2.8, p.y - height(p.x, p.z));
+        box(g, '#aaa48b', 0, -drop / 2 - 0.3, 0, 1.7, drop, 1);
+      }
       this.railGroup.add(g);
     }
   }
   private towns() {
+    // A small glacial tarn occupies the natural basin beneath the high railway.
+    const lake = new THREE.Mesh(
+      new THREE.CircleGeometry(11, 48),
+      new THREE.MeshStandardMaterial({
+        color: '#498b9a',
+        roughness: 0.25,
+        metalness: 0.25,
+      }),
+    );
+    lake.rotation.x = -Math.PI / 2;
+    lake.position.set(85, -1.05, -265);
+    this.sceneryGroup.add(lake);
     const random = rng(903);
     cities.forEach((city, index) => {
+      if (!this.sim.network.nodes.some((n) => n.id === index)) return;
       const urban = new THREE.Group();
       this.sceneryGroup.add(urban);
+      urban.position.y = city.elevation ?? 0;
       for (let i = 0; i < (index === 4 ? 22 : 12); i++) {
         const col = i % 4,
           row = Math.floor(i / 4);
@@ -648,11 +705,15 @@ export class RailwayWorld {
       );
       const el = document.createElement('div');
       el.className = 'city-label';
-      el.innerHTML = `<strong>${city.name}</strong><span>${city.cargo}</span>`;
+      el.innerHTML = `<strong>${city.name}</strong><span>${city.cargo}${city.elevation ? ` · ${Math.round((city.elevation * 50) / 9)} m` : ''}</span>`;
       this.host.appendChild(el);
       this.labels.push({
         element: el,
-        position: new THREE.Vector3(city.x, 5, city.z - 3),
+        position: new THREE.Vector3(
+          city.x,
+          (city.elevation ?? 0) + 5,
+          city.z - 3,
+        ),
       });
     });
     // Golden fields and neatly spaced planted rows around agricultural towns.
@@ -687,8 +748,8 @@ export class RailwayWorld {
     const random = rng(731);
     const positions: { x: number; y: number; z: number; s: number }[] = [];
     for (let i = 0; i < 3600; i++) {
-      const x = (random() * 184 - 92) * MAP_SCALE,
-        z = (random() * 174 - 87) * MAP_SCALE;
+      const x = MAP.minX + random() * (MAP.maxX - MAP.minX),
+        z = MAP.minZ + random() * (MAP.maxZ - MAP.minZ);
       if (
         !this.sceneryClear(x, z, 3) ||
         cities.some((c) => Math.hypot(x - c.x, z - c.z) < 17) ||
@@ -747,8 +808,8 @@ export class RailwayWorld {
     const rockGeo = new THREE.IcosahedronGeometry(1, 0);
     const rocks = new THREE.InstancedMesh(rockGeo, material('#939789'), 100);
     for (let i = 0; i < 100; i++) {
-      const x = (random() * 180 - 90) * MAP_SCALE,
-        z = (-68 - random() * 19) * MAP_SCALE;
+      const x = MAP.minX + random() * (MAP.maxX - MAP.minX),
+        z = -180 - random() * 180;
       o.position.set(x, groundHeight(this.groundHeights, x, z), z);
       o.scale.set(1 + random() * 1.5, 0.8 + random(), 1 + random());
       o.rotation.set(random(), random(), random());
@@ -759,8 +820,29 @@ export class RailwayWorld {
     this.sceneryGroup.add(rocks);
   }
   private syncCars(id: number) {
+    const unit = this.sim.fleet.units[id];
+    if (this.trains[id].userData.engine !== unit.engine) {
+      const old = this.trains[id];
+      old.removeFromParent();
+      const fresh = locomotive(ENGINES[unit.engine].color, id, unit.engine);
+      this.trains[id] = fresh;
+      this.scene.add(fresh);
+      this.rememberResources(fresh);
+      // Shared procedural materials and cached showcase meshes remain owned by the world.
+      old.traverse((o) => {
+        if (o instanceof THREE.Mesh && o.geometry.type === 'CylinderGeometry') {
+          o.geometry.dispose();
+          this.resources.delete(o.geometry);
+        }
+      });
+      if (id === 10) this.detailLevel = -1;
+    }
     const wagon = this.sim.economy.services[id].wagon;
-    if (this.cars[id][1] && this.cars[id][1].userData.wagon !== wagon) {
+    if (
+      this.cars[id]
+        .slice(1)
+        .some((car, i) => car.userData.wagon !== unit.consist[i])
+    ) {
       for (const removed of this.cars[id].splice(1)) {
         removed.removeFromParent();
         removed.traverse((o) => {
@@ -771,7 +853,11 @@ export class RailwayWorld {
     }
     const count = this.sim.trains[id].cars + 1;
     while (this.cars[id].length < count) {
-      const c = carriage(locomotives[id].color, this.cars[id].length, wagon);
+      const c = carriage(
+        ENGINES[unit.engine].color,
+        this.cars[id].length,
+        unit.consist[this.cars[id].length - 1] ?? wagon,
+      );
       c.userData.trainId = id;
       batchScenery(c, new Set());
       c.visible = this.sim.visible(this.sim.trains[id]);
@@ -789,11 +875,14 @@ export class RailwayWorld {
   }
   private positionOnRoute(id: number, distance: number) {
     const train = this.sim.trains[id];
-    const { p, angle } = this.sim.vehiclePosition(
-      train,
-      train.distance - distance,
+    const offset = train.distance - distance;
+    const { p, angle } = this.sim.vehiclePosition(train, offset);
+    const back = this.sim.vehiclePosition(train, offset + 0.5).p;
+    const pitch = Math.atan2(
+      p.y - back.y,
+      Math.hypot(p.x - back.x, p.z - back.z),
     );
-    return { p: new THREE.Vector3(p.x, p.y, p.z), angle };
+    return { p: new THREE.Vector3(p.x, p.y, p.z), angle, pitch };
   }
 
   private sceneryClear(x: number, z: number, clearance: number) {
@@ -819,7 +908,7 @@ export class RailwayWorld {
     });
   }
   private updateShowcase() {
-    if (!this.showcase) return;
+    if (!this.showcase || this.sim.fleet.units[10].engine !== 10) return;
     const distance =
       this.camera.position.distanceTo(this.trains[10].position) /
       (this.camera instanceof THREE.OrthographicCamera ? this.camera.zoom : 1);
@@ -908,10 +997,10 @@ export class RailwayWorld {
       this.syncCars(i);
       this.trains[i].visible = this.sim.visible(train);
       this.cars[i].forEach((car) => (car.visible = this.sim.visible(train)));
-      const { p, angle } = this.positionOnRoute(i, train.distance);
+      const { p, angle, pitch } = this.positionOnRoute(i, train.distance);
       const engine = this.trains[i];
       engine.position.copy(p);
-      engine.rotation.y = angle;
+      engine.rotation.set(pitch, angle, 0, 'YXZ');
       const running = train.motion.velocity > 0 && !train.held;
       const phase =
         train.motion.travelled * 2.5 * (train.motion.reversed ? -1 : 1);
@@ -927,7 +1016,7 @@ export class RailwayWorld {
           train.distance - vehicles(train.cars)[j + 1].offset,
         );
         car.position.copy(at.p);
-        car.rotation.set(0, at.angle, 0);
+        car.rotation.set(at.pitch, at.angle, 0, 'YXZ');
         if (running) {
           car.rotation.z = Math.sin(train.distance * 2 + j * 0.8) * 0.008;
           car.position.y += Math.sin(train.distance * 4 + j) * 0.009;

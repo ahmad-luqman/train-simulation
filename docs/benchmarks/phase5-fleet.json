@@ -1,0 +1,245 @@
+{
+  "measuredAt": "2026-09-10T19:06:29.911Z",
+  "platform": "darwin arm64",
+  "cpu": "Apple M4 Max",
+  "scenario": "Default mixed fleet including Alpine Monarch mountain circuit; two 1800-second windows",
+  "simulatedSeconds": 3600,
+  "milliseconds": 19933.227958000003,
+  "millisecondsPerTick": 0.2768503883055556,
+  "stations": 14,
+  "corridors": 22,
+  "tunnels": ["8-9", "9-10", "10-11", "11-12", "1-10", "2-12"],
+  "elevatedSpans": ["11-12", "12-13"],
+  "maxGrade": 0.04023226951750483,
+  "windows": [
+    [
+      {
+        "id": 0,
+        "calls": 3,
+        "delivered": 126
+      },
+      {
+        "id": 1,
+        "calls": 2,
+        "delivered": 84
+      },
+      {
+        "id": 2,
+        "calls": 5,
+        "delivered": 210
+      },
+      {
+        "id": 3,
+        "calls": 2,
+        "delivered": 42
+      },
+      {
+        "id": 4,
+        "calls": 1,
+        "delivered": 42
+      },
+      {
+        "id": 5,
+        "calls": 3,
+        "delivered": 126
+      },
+      {
+        "id": 6,
+        "calls": 4,
+        "delivered": 86
+      },
+      {
+        "id": 7,
+        "calls": 4,
+        "delivered": 168
+      },
+      {
+        "id": 8,
+        "calls": 3,
+        "delivered": 126
+      },
+      {
+        "id": 9,
+        "calls": 4,
+        "delivered": 0
+      },
+      {
+        "id": 10,
+        "calls": 7,
+        "delivered": 294
+      },
+      {
+        "id": 11,
+        "calls": 3,
+        "delivered": 126
+      }
+    ],
+    [
+      {
+        "id": 0,
+        "calls": 5,
+        "delivered": 210
+      },
+      {
+        "id": 1,
+        "calls": 7,
+        "delivered": 294
+      },
+      {
+        "id": 2,
+        "calls": 9,
+        "delivered": 378
+      },
+      {
+        "id": 3,
+        "calls": 4,
+        "delivered": 84
+      },
+      {
+        "id": 4,
+        "calls": 3,
+        "delivered": 84
+      },
+      {
+        "id": 5,
+        "calls": 6,
+        "delivered": 252
+      },
+      {
+        "id": 6,
+        "calls": 6,
+        "delivered": 128
+      },
+      {
+        "id": 7,
+        "calls": 7,
+        "delivered": 294
+      },
+      {
+        "id": 8,
+        "calls": 5,
+        "delivered": 210
+      },
+      {
+        "id": 9,
+        "calls": 7,
+        "delivered": 42
+      },
+      {
+        "id": 10,
+        "calls": 14,
+        "delivered": 588
+      },
+      {
+        "id": 11,
+        "calls": 4,
+        "delivered": 168
+      }
+    ]
+  ],
+  "cash": 528735,
+  "accounts": {
+    "revenue": 132930,
+    "expenses": 29195,
+    "profit": 103735
+  },
+  "fleet": [
+    {
+      "id": 0,
+      "condition": 76.50032731652081,
+      "fuel": 48.566754126659575,
+      "water": 29.057591898802194,
+      "services": 0,
+      "downtime": 0
+    },
+    {
+      "id": 1,
+      "condition": 66.08118947576945,
+      "fuel": 87.02157950376655,
+      "water": 86.33850474081002,
+      "services": 0,
+      "downtime": 5.999999999999987
+    },
+    {
+      "id": 2,
+      "condition": 56.11050053325538,
+      "fuel": 88.1901911207091,
+      "water": 76.38038224134469,
+      "services": 0,
+      "downtime": 5.999999999999987
+    },
+    {
+      "id": 3,
+      "condition": 75.73937161840152,
+      "fuel": 55.88976657890412,
+      "water": 29.42362652629282,
+      "services": 0,
+      "downtime": 0
+    },
+    {
+      "id": 4,
+      "condition": 87.89205788115488,
+      "fuel": 73.31310716658857,
+      "water": 60.46386246904176,
+      "services": 0,
+      "downtime": 0
+    },
+    {
+      "id": 5,
+      "condition": 72.83741892292844,
+      "fuel": 100,
+      "water": 100,
+      "services": 0,
+      "downtime": 5.999999999999987
+    },
+    {
+      "id": 6,
+      "condition": 71.44401848971563,
+      "fuel": 91.62996321763524,
+      "water": 86.04993869606321,
+      "services": 0,
+      "downtime": 5.999999999999987
+    },
+    {
+      "id": 7,
+      "condition": 71.29792956588352,
+      "fuel": 90.8342075366564,
+      "water": 88.54275942082957,
+      "services": 0,
+      "downtime": 5.999999999999987
+    },
+    {
+      "id": 8,
+      "condition": 77.29655422773057,
+      "fuel": 25.330889460010585,
+      "water": 19.276637254013398,
+      "services": 0,
+      "downtime": 0
+    },
+    {
+      "id": 9,
+      "condition": 68.9544294486143,
+      "fuel": 85.2866789320675,
+      "water": 86.31318970426811,
+      "services": 0,
+      "downtime": 5.999999999999987
+    },
+    {
+      "id": 10,
+      "condition": 89.94148121198451,
+      "fuel": 65.65383828479663,
+      "water": 60.74724375397383,
+      "services": 1,
+      "downtime": 34.700000000000166
+    },
+    {
+      "id": 11,
+      "condition": 83.82587494706014,
+      "fuel": 39.81720910519268,
+      "water": 39.81720910519268,
+      "services": 0,
+      "downtime": 0
+    }
+  ],
+  "scope": "Headless fleet and account reconciliation. Geometric collision and service progress assertions run in the test suite. Browser/GPU acceptance remains unmeasured."
+}

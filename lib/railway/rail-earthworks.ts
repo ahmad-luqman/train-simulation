@@ -1,9 +1,10 @@
+import { tunnelAt } from './structures';
 import { MAP } from './map';
 import { height } from './terrain';
 import type { Section } from './topology';
 
-export const TERRAIN_COLUMNS = 240;
-export const TERRAIN_ROWS = 224;
+export const TERRAIN_COLUMNS = 320;
+export const TERRAIN_ROWS = 320;
 const dx = (MAP.halfWidth * 2) / TERRAIN_COLUMNS;
 const dz = (MAP.halfDepth * 2) / TERRAIN_ROWS;
 const stride = TERRAIN_COLUMNS + 1;
@@ -27,6 +28,7 @@ export function railwayGround(
     const protectedWidth = (section.kind === 'platform' ? 4 : 1.4) + meshMargin;
     const radius = protectedWidth + shoulder;
     for (let i = 1; i < section.points.length; i++) {
+      if (tunnelAt(section.points, i, section.kind === 'running')) continue;
       const a = section.points[i - 1],
         b = section.points[i];
       const vx = b.x - a.x,

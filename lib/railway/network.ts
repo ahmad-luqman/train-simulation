@@ -236,12 +236,19 @@ export function legacyCurvePoints(a: Point, b: Point): Point[] {
 }
 let baselineYards: { yardAngle: number; yardLead: number }[] | undefined;
 export function createNetwork(): RailNetwork {
-  const nodes = cities.map((c, id) => ({ ...c, id, y: 0.36 }));
+  const nodes = cities.map((c, id) => ({
+    ...c,
+    id,
+    y: (c.elevation ?? 0) + 0.36,
+  }));
   const network: RailNetwork = {
     nodes,
     crossovers: [],
     edges: corridors.map(([a, b]) => {
-      const points = legacyCurvePoints(nodes[a], nodes[b]),
+      const points =
+          a >= 8 || b >= 8
+            ? curvePoints(nodes[a], nodes[b], 12)
+            : legacyCurvePoints(nodes[a], nodes[b]),
         metrics = measure(points);
       return {
         id: edgeKey(a, b),
@@ -260,22 +267,36 @@ export function createNetwork(): RailNetwork {
       id: `station-${n.id}`,
       node: n.id,
       name: n.name,
-      platforms: [
-        `platform-${n.id}`,
-        `platform-${8 + n.id}`,
-        `platform-${16 + n.id}`,
-        ...(n.id === 4 ? ['platform-24'] : []),
-      ],
+      platforms:
+        n.id >= 8
+          ? [0, 1, 2].map((i) => `platform-${25 + (n.id - 8) * 3 + i}`)
+          : [
+              `platform-${n.id}`,
+              `platform-${8 + n.id}`,
+              `platform-${16 + n.id}`,
+              ...(n.id === 4 ? ['platform-24'] : []),
+            ],
       built: false,
     })),
-    nextNode: 8,
+    nextNode: nodes.length,
     nextEdge: 1,
-    nextPlatform: 25,
+    nextPlatform: 25 + (nodes.length - 8) * 3,
   };
   for (const station of network.stations)
     Object.assign(
       station,
-      baselineYards?.[station.node] ?? chooseYard(network, station.node),
+      baselineYards?.[station.node] ??
+        chooseYard(
+          station.node < 8
+            ? {
+                ...network,
+                nodes: network.nodes.filter((n) => n.id < 8),
+                edges: network.edges.filter((e) => e.a < 8 && e.b < 8),
+                stations: network.stations.filter((s) => s.node < 8),
+              }
+            : network,
+          station.node,
+        ),
     );
   baselineYards ??= network.stations.map((s) => ({
     yardAngle: s.yardAngle!,

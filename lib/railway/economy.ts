@@ -1,3 +1,4 @@
+import { fleetFactors, wagonCapacity } from './fleet';
 import type { Simulation, TrainState } from './simulation';
 
 export const CARGO = [
@@ -49,6 +50,9 @@ export const PRODUCERS: { node: number; cargo: Cargo }[] = [
   { node: 3, cargo: 'grain' },
   { node: 6, cargo: 'grain' },
   { node: 0, cargo: 'coal' },
+  { node: 8, cargo: 'timber' },
+  { node: 9, cargo: 'coal' },
+  { node: 12, cargo: 'timber' },
 ];
 export type Manifest = {
   cargo: Cargo;
@@ -386,12 +390,14 @@ export function tickEconomy(sim: Simulation) {
   if (minute > e.billedMinute) {
     const periods = minute - e.billedMinute;
     for (const t of sim.trains) {
+      if (!sim.fleet.units[t.id].owned) continue;
+      const { spec, upgrade } = fleetFactors(sim, t.id);
       const distance = Math.max(0, t.motion.travelled - e.billedDistance[t.id]);
       journal(
         sim,
         'fuel',
-        -Math.ceil(distance * 0.3),
-        'Fuel · $0.30 per scene unit',
+        -Math.ceil(distance * spec.fuelRate * upgrade.fuel),
+        'Locomotive fuel consumption',
         { train: t.id },
       );
       journal(sim, 'crew', -6 * periods, 'Crew · $6 per minute', {
@@ -400,8 +406,8 @@ export function tickEconomy(sim: Simulation) {
       journal(
         sim,
         'maintenance',
-        -(3 + t.cars) * periods,
-        'Maintenance · $3 + $1 per wagon per minute',
+        -(spec.maintenance + t.cars) * periods,
+        'Locomotive and wagon upkeep',
         { train: t.id },
       );
       e.billedDistance[t.id] = t.motion.travelled;
@@ -439,7 +445,9 @@ export function loadCargo(
     service.warning = 'This station has no inventory yet.';
     return;
   }
-  const compatible: readonly Cargo[] = WAGONS[service.wagon].cargo;
+  const compatible: readonly Cargo[] = [
+    ...new Set(sim.fleet.units[t.id].consist.flatMap((w) => WAGONS[w].cargo)),
+  ];
   const cargo = [...compatible]
     .filter((c) => supply(source, c) > 0 && demand(destination, c) > 0)
     .sort((a, b) => {
@@ -457,7 +465,7 @@ export function loadCargo(
       );
     })[0];
   const limit = Math.min(
-    t.cars * 18,
+    wagonCapacity(sim, t.id, cargo),
     Math.floor(sim.services[t.id].dwell * 12),
   );
   const quantity = cargo
@@ -483,7 +491,7 @@ export function loadCargo(
     quantity < limit
       ? 'Partial load: source stock or destination demand is limited.'
       : '';
-  t.load = Math.round((quantity / (t.cars * 18)) * 100);
+  t.load = Math.round((quantity / wagonCapacity(sim, t.id)) * 100);
 }
 export function unloadCargo(sim: Simulation, t: TrainState, node: number) {
   const service = sim.economy.services[t.id],
@@ -533,7 +541,7 @@ export function unloadCargo(sim: Simulation, t: TrainState, node: number) {
     : '';
   m.quantity = rejected;
   if (!rejected) service.manifest = null;
-  t.load = Math.round((rejected / (t.cars * 18)) * 100);
+  t.load = Math.round((rejected / wagonCapacity(sim, t.id)) * 100);
   sim.events.unshift(
     `${accepted} ${m.cargo} delivered · +$${income}${rejected ? ` · ${rejected} retained aboard` : ''}`,
   );
@@ -589,7 +597,13 @@ export function refit(sim: Simulation, id: number, wagon: Wagon) {
     service = sim.economy.services[id];
   if (!t || !Object.hasOwn(WAGONS, wagon))
     throw new Error('Choose a train and wagon family.');
-  if (t.motion.started || t.motion.velocity > 0 || service.manifest)
+  if (
+    t.motion.started ||
+    t.motion.velocity > 0 ||
+    service.manifest ||
+    sim.fleet.units[id].job ||
+    sim.fleet.units[id].detour
+  )
     throw new Error(
       'Refit requires an empty train stopped at a station or depot. Deliver its cargo first.',
     );
@@ -597,6 +611,7 @@ export function refit(sim: Simulation, id: number, wagon: Wagon) {
   if (!sim.canAfford(2500)) throw new Error('Refitting costs $2,500.');
   pay(sim, 2500, 'wagon', 'Wagon family refit', id);
   service.wagon = wagon;
+  sim.fleet.units[id].consist = Array.from({ length: t.cars }, () => wagon);
   service.warning = '';
   sim.revision++;
 }
@@ -679,10 +694,10 @@ export function validateEconomy(sim: Simulation) {
       if (
         !m ||
         !CARGO.includes(m.cargo) ||
-        !(WAGONS[service.wagon].cargo as readonly Cargo[]).includes(m.cargo) ||
+        wagonCapacity(sim, id, m.cargo) === 0 ||
         !natural(m.quantity) ||
         m.quantity < 1 ||
-        m.quantity > sim.trains[id].cars * 18 ||
+        m.quantity > wagonCapacity(sim, id, m.cargo) ||
         !seen.has(m.source) ||
         !seen.has(m.destination) ||
         m.source === m.destination ||
@@ -696,7 +711,7 @@ export function validateEconomy(sim: Simulation) {
     }
     if (
       sim.trains[id].load !==
-      Math.round(((m?.quantity ?? 0) / (sim.trains[id].cars * 18)) * 100)
+      Math.round(((m?.quantity ?? 0) / wagonCapacity(sim, id)) * 100)
     )
       fail();
   }

@@ -532,7 +532,8 @@ export class Traffic {
           p.stopTarget = this.topology.length(sections) - FRONT;
           p.blockers = [];
           t.motion.reversed = false;
-          loadCargo(this.sim, t, from, route.to);
+          if (!this.sim.fleet.units[t.id].detour)
+            loadCargo(this.sim, t, from, route.to);
           t.motion.started = true;
           t.distance = 0.000001;
           for (const i of this.intervals(route).filter((i) =>
@@ -624,6 +625,19 @@ export class Traffic {
       p = m.physical,
       previousWait = m.wait;
     delete m.wait;
+    const fleet = this.sim.fleet.units[t.id];
+    if (!fleet.owned || fleet.job) {
+      if (!fleet.owned) t.held = true;
+      m.velocity = 0;
+      this.wait(
+        t,
+        'depot',
+        !fleet.owned
+          ? 'Purchase an engine for this service.'
+          : `${fleet.job!.kind === 'service' ? 'Workshop service' : 'Coal and water'} · ${Math.ceil(fleet.job!.remaining)} s`,
+      );
+      return;
+    }
     if (t.held) {
       m.velocity = 0;
       this.wait(
@@ -709,6 +723,7 @@ export class Traffic {
         route.sections.find((s) => s.section === current.id)!.reverse
           ? e.b
           : e.a,
+        this.sim.fleet.units[t.id],
       );
     let curveLimit = physics.limit,
       base = 0;

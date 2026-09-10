@@ -1,4 +1,5 @@
 import { locomotives } from './data';
+import { ENGINES } from './fleet';
 import type { Simulation } from './simulation';
 type Tool = {
   name: string;
@@ -47,7 +48,9 @@ export function registerRailwayTools(
         paused: sim.paused,
         trains: sim.trains.map((t) => ({
           id: t.id,
-          name: locomotives[t.id].name,
+          name: ENGINES[sim.fleet.units[t.id].engine].name,
+          owned: sim.fleet.units[t.id].owned,
+          condition: sim.fleet.units[t.id].condition,
           status: t.held ? 'On hold' : t.status,
           cars: t.cars,
           revenue: t.revenue,
@@ -97,7 +100,7 @@ export function registerRailwayTools(
           held = (input as { held: unknown }).held;
         if (typeof held !== 'boolean')
           throw new Error('held must be a boolean.');
-        sim.trains[id].held = held;
+        sim.setHold(id, held);
         refresh();
         await new Promise<void>((resolve) =>
           requestAnimationFrame(() => resolve()),

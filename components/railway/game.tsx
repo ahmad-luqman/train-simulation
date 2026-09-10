@@ -42,6 +42,8 @@ import {
   NativeSelectOption,
 } from '@/components/ui/native-select';
 import { locomotives, money } from '@/lib/railway/data';
+import { FleetOffice } from './fleet-office';
+import { ENGINES } from '@/lib/railway/fleet';
 import { EconomyOffice } from './economy-office';
 import { accounts, WAGONS } from '@/lib/railway/economy';
 import { Dispatcher } from './dispatcher';
@@ -53,7 +55,8 @@ import type { RailwayWorld, CameraMode } from '@/lib/railway/world';
 import { makePortraits } from '@/lib/railway/portraits';
 import type { AudioMix } from '@/lib/railway/audio';
 import { registerRailwayTools } from '@/lib/railway/webmcp';
-const SAVE_KEY = 'steam-atlas-save-v6';
+const SAVE_KEY = 'steam-atlas-save-v7';
+const PHASE_4_SAVE_KEY = 'steam-atlas-save-v6';
 const PHASE_3B_SAVE_KEY = 'steam-atlas-save-v5';
 const PHASE_3A_SAVE_KEY = 'steam-atlas-save-v4';
 const PHASE_3_SAVE_KEY = 'steam-atlas-save-v3';
@@ -90,7 +93,8 @@ export default function Game() {
     [quality, setQuality] = useState('balanced'),
     [editorOpen, setEditorOpen] = useState(false),
     [dispatcherOpen, setDispatcherOpen] = useState(false),
-    [economyOpen, setEconomyOpen] = useState(false);
+    [economyOpen, setEconomyOpen] = useState(false),
+    [fleetOpen, setFleetOpen] = useState(false);
   useEffect(() => {
     let active = true;
     let instance: RailwayWorld | undefined;
@@ -205,6 +209,7 @@ export default function Game() {
     try {
       const data =
         localStorage.getItem(SAVE_KEY) ??
+        localStorage.getItem(PHASE_4_SAVE_KEY) ??
         localStorage.getItem(PHASE_3B_SAVE_KEY) ??
         localStorage.getItem(PHASE_3A_SAVE_KEY) ??
         localStorage.getItem(PHASE_3_SAVE_KEY) ??
@@ -217,6 +222,7 @@ export default function Game() {
       sim.current.restore(JSON.parse(data));
       setEditorOpen(false);
       setDispatcherOpen(false);
+      setFleetOpen(false);
       setEconomyOpen(false);
       setTick((t) => t + 1);
       setNotice('Your railway has been restored.');
@@ -251,7 +257,7 @@ export default function Game() {
     window.addEventListener('keydown', handle);
     return () => window.removeEventListener('keydown', handle);
   }, [mode, follow]);
-  const engine = locomotives[selected],
+  const engine = ENGINES[sim.current.fleet.units[selected].engine],
     train = sim.current.trains[selected],
     route = sim.current.services[selected].stops,
     [a, b] = sim.current.endpoints(train),
@@ -264,7 +270,9 @@ export default function Game() {
     year: 'numeric',
     timeZone: 'UTC',
   });
-  const active = sim.current.trains.filter((t) => !t.held).length;
+  const active = sim.current.trains.filter(
+    (t) => !t.held && sim.current.fleet.units[t.id].owned,
+  ).length;
   const progress = Math.min(
     100,
     train.motion.physical.route
@@ -394,33 +402,36 @@ export default function Game() {
             </button>
           </div>
           <div className="roster-list">
-            {locomotives.map((l, i) => (
-              <button
-                key={l.name}
-                className={`train-row ${selected === i ? 'selected' : ''}`}
-                aria-pressed={selected === i}
-                onClick={() => {
-                  setSelected(i);
-                  setRosterOpen(false);
-                  setDetailsOpen(true);
-                }}
-              >
-                {portraits[i] ? (
-                  <img src={portraits[i]} alt="" />
-                ) : (
-                  <TrainFront color={l.color} size={33} />
-                )}
-                <span className="train-row-copy">
-                  <strong>{l.name}</strong>
-                  <small>
-                    {l.type} · {l.year}
-                  </small>
-                </span>
-                <i
-                  className={`status-dot ${sim.current.trains[i].held ? 'held' : sim.current.trains[i].status === 'At signal' ? 'waiting' : ''}`}
-                />
-              </button>
-            ))}
+            {sim.current.fleet.units.map((unit, i) => {
+              const l = ENGINES[unit.engine];
+              return (
+                <button
+                  key={l.name}
+                  className={`train-row ${selected === i ? 'selected' : ''}`}
+                  aria-pressed={selected === i}
+                  onClick={() => {
+                    setSelected(i);
+                    setRosterOpen(false);
+                    setDetailsOpen(true);
+                  }}
+                >
+                  {portraits[unit.engine] ? (
+                    <img src={portraits[unit.engine]} alt="" />
+                  ) : (
+                    <TrainFront color={l.color} size={33} />
+                  )}
+                  <span className="train-row-copy">
+                    <strong>{unit.owned ? l.name : 'Vacant service'}</strong>
+                    <small>
+                      {l.type} · {l.year}
+                    </small>
+                  </span>
+                  <i
+                    className={`status-dot ${sim.current.trains[i].held ? 'held' : sim.current.trains[i].status === 'At signal' ? 'waiting' : ''}`}
+                  />
+                </button>
+              );
+            })}
           </div>
           <div className="roster-footer">
             <span>
@@ -473,6 +484,7 @@ export default function Game() {
                 className="map-button"
                 aria-expanded={editorOpen}
                 onClick={() => {
+                  setFleetOpen(false);
                   setEconomyOpen(false);
                   setEditorOpen(!editorOpen);
                   setDispatcherOpen(false);
@@ -484,6 +496,7 @@ export default function Game() {
                 className="map-button"
                 aria-expanded={dispatcherOpen}
                 onClick={() => {
+                  setFleetOpen(false);
                   setEconomyOpen(false);
                   setDispatcherOpen(!dispatcherOpen);
                   setEditorOpen(false);
@@ -495,12 +508,25 @@ export default function Game() {
                 className="map-button"
                 aria-expanded={economyOpen}
                 onClick={() => {
+                  setFleetOpen(false);
                   setEconomyOpen(!economyOpen);
                   setEditorOpen(false);
                   setDispatcherOpen(false);
                 }}
               >
                 Economy
+              </button>
+              <button
+                className="map-button"
+                aria-expanded={fleetOpen}
+                onClick={() => {
+                  setFleetOpen(!fleetOpen);
+                  setEconomyOpen(false);
+                  setEditorOpen(false);
+                  setDispatcherOpen(false);
+                }}
+              >
+                Fleet & depots
               </button>
             </div>
             <div className="toolbar-row">
@@ -818,6 +844,16 @@ export default function Game() {
               <span className="minimap-title">NETWORK OVERVIEW</span>
             </button>
           </div>
+          {fleetOpen && (
+            <FleetOffice
+              key={selected}
+              sim={sim.current}
+              selected={selected}
+              select={setSelected}
+              close={() => setFleetOpen(false)}
+              changed={() => setTick((t) => t + 1)}
+            />
+          )}
           {economyOpen && (
             <EconomyOffice
               sim={sim.current}
@@ -910,8 +946,11 @@ export default function Game() {
             <button
               className="button"
               onClick={() => {
-                train.held = !train.held;
-                train.stopAtStation = false;
+                if (!sim.current.fleet.units[selected].owned) {
+                  setNotice('Purchase a locomotive in Fleet & depots first.');
+                  return;
+                }
+                sim.current.setHold(selected, !train.held);
                 setTick((t) => t + 1);
               }}
             >
@@ -1112,6 +1151,7 @@ export default function Game() {
                   onClick={() => {
                     setEditorOpen(false);
                     setDispatcherOpen(false);
+                    setFleetOpen(false);
                     setEconomyOpen(false);
                     const fresh = new Simulation();
                     sim.current.restore(fresh.save());

@@ -1,4 +1,11 @@
 import {
+  createFleet,
+  tickFleet,
+  validateFleet,
+  wagonCapacity,
+  type FleetState,
+} from './fleet';
+import {
   createEconomy,
   tickEconomy,
   journal,
@@ -19,7 +26,7 @@ import {
   type Motion,
   type WaitReason,
 } from './dispatch';
-import { locomotives } from './data';
+import { locomotives, MOUNTAIN_SERVICE } from './data';
 import {
   createNetwork,
   edgeAt,
@@ -64,7 +71,8 @@ export type ConstructionRecord = {
   used?: boolean;
 };
 export type SaveState = {
-  version: 6;
+  version: 7;
+  fleet: FleetState;
   economy: EconomyState;
   dispatch: DispatchState;
   elapsed: number;
@@ -83,7 +91,13 @@ export class Simulation {
       this.network,
       id,
       `${l.name} service`,
-      id === 3 ? [0, 4] : id === 4 ? [3, 4] : l.route,
+      id === 3
+        ? [0, 4]
+        : id === 4
+          ? [3, 4]
+          : id === 10
+            ? MOUNTAIN_SERVICE
+            : l.route,
       3.5,
     ),
   );
@@ -107,6 +121,7 @@ export class Simulation {
     this.network.stations.map((s) => s.node),
     locomotives.length,
   );
+  fleet = createFleet(this);
   constructor() {
     this.economy.ledger.push({
       id: 1,
@@ -154,6 +169,7 @@ export class Simulation {
       if (this.accumulator < 1e-10) this.accumulator = 0;
       this.elapsed += 0.05;
       tickEconomy(this);
+      tickFleet(this);
       this.releaseCleared();
       const order = [...this.trains].sort(
         (a, b) => this.dispatchRank(b) - this.dispatchRank(a) || a.id - b.id,
@@ -247,6 +263,14 @@ export class Simulation {
   }
   setDirection(id: string, direction: 'both' | 'a-to-b' | 'b-to-a') {
     const edge = edgeAt(this.network, id);
+    if (
+      this.fleet.units.some((u) =>
+        u.detour?.service.legs.some((l) => l.edge === id),
+      )
+    )
+      throw new Error(
+        'Finish the workshop transfer before editing its original route.',
+      );
     if (!edge || !['both', 'a-to-b', 'b-to-a'].includes(direction))
       throw new Error('Choose a track direction.');
     if (
@@ -365,6 +389,8 @@ export class Simulation {
     const t = this.trains[id];
     if (
       !t ||
+      !this.fleet.units[id].owned ||
+      !!this.fleet.units[id].job ||
       t.cars >= 6 ||
       !this.canAfford(8500) ||
       t.motion.started ||
@@ -383,13 +409,24 @@ export class Simulation {
     for (const r of this.dispatch.reservations)
       if (r.owner === id && r.releaseAt !== null) r.releaseAt += 3;
     t.cars++;
+    this.fleet.units[id].consist.push(this.economy.services[id].wagon);
     this.traffic.refreshProtection();
     pay(this, 8500, 'wagon', 'Additional wagon', id);
     t.load = Math.round(
-      ((this.economy.services[id].manifest?.quantity ?? 0) / (t.cars * 18)) *
+      ((this.economy.services[id].manifest?.quantity ?? 0) /
+        wagonCapacity(this, id)) *
         100,
     );
     return true;
+  }
+  setHold(id: number, held: boolean) {
+    const t = this.trains[id];
+    if (!t || typeof held !== 'boolean')
+      throw new Error('Choose a train and hold setting.');
+    if (!held && !this.fleet.units[id].owned)
+      throw new Error('Purchase a locomotive before releasing this service.');
+    t.held = held;
+    t.stopAtStation = false;
   }
   stopForEditing(id: number) {
     const t = this.trains[id];
@@ -408,6 +445,10 @@ export class Simulation {
   assignService(service: Service) {
     const t = this.trains[service.trainId];
     if (!t) throw new Error('Choose a train.');
+    if (this.fleet.units[t.id].detour || this.fleet.units[t.id].job)
+      throw new Error(
+        'Finish the workshop visit before reassigning this service.',
+      );
     validateService(this.network, service, service.trainId);
     if (
       !t.held ||
@@ -781,6 +822,12 @@ export class Simulation {
       )
     )
       return 'A train or its trailing consist occupies this infrastructure.';
+    if (
+      this.fleet.units.some((u) =>
+        u.detour?.service.legs.some((l) => l.edge === id),
+      )
+    )
+      return 'This track belongs to a service making a workshop visit.';
     if (this.services.some((s) => s.legs.some((l) => l.edge === id)))
       return 'This track is assigned to a service. Change that service at a station first.';
     if (
@@ -805,6 +852,13 @@ export class Simulation {
     this.changed();
   }
   undoReason(record: ConstructionRecord) {
+    if (
+      record.station &&
+      record.action !== 'platform' &&
+      record.node !== undefined &&
+      this.fleet.depots.includes(record.node)
+    )
+      return 'This station has an operating workshop.';
     if (
       record.reversed ||
       !['build', 'station', 'platform', 'crossover'].includes(record.action)
@@ -940,7 +994,8 @@ export class Simulation {
   }
   save(): SaveState {
     return structuredClone({
-      version: 6,
+      version: 7,
+      fleet: this.fleet,
       economy: this.economy,
       dispatch: this.dispatch,
       elapsed: this.elapsed,
@@ -956,7 +1011,7 @@ export class Simulation {
   restore(value: unknown) {
     // Validate a detached candidate; malformed saves cannot change the live world or treasury.
     const raw = value as SaveState;
-    if (!raw || ![1, 2, 3, 4, 5, 6].includes(raw.version))
+    if (!raw || ![1, 2, 3, 4, 5, 6, 7].includes(raw.version))
       throw new Error('This save version is not compatible.');
     if (raw.version < 5)
       throw new Error(
@@ -1191,7 +1246,11 @@ export class Simulation {
       ];
       candidate.trains.forEach((t) => (t.load = 0));
     } else candidate.economy = s.economy;
+    candidate.fleet =
+      Number(raw.version) < 7 ? createFleet(candidate) : s.fleet;
+    validateFleet(candidate);
     validateEconomy(candidate);
+    this.fleet = candidate.fleet;
     this.economy = candidate.economy;
     this.network = candidate.network;
     this.services = candidate.services;
@@ -1430,7 +1489,7 @@ function validateNetwork(n: RailNetwork) {
   )
     throw new Error('Invalid network ID counters.');
 }
-function validateService(network: RailNetwork, s: Service, id: number) {
+export function validateService(network: RailNetwork, s: Service, id: number) {
   if (
     !s ||
     s.id !== `service-${id}` ||

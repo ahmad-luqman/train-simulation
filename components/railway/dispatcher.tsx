@@ -418,8 +418,7 @@ export function Dispatcher({
           onClick={() =>
             act(
               () => {
-                train.held = !train.held;
-                train.stopAtStation = false;
+                sim.setHold(train.id, !train.held);
               },
               train.held
                 ? 'Train released.'

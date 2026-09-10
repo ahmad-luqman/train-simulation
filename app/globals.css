@@ -2260,3 +2260,28 @@ p {
     padding: 9px 5px;
   }
 }
+
+.fleet-office {
+  max-height: calc(100% - 100px);
+  overflow-y: auto;
+}
+.fleet-office label {
+  display: grid;
+  gap: 6px;
+  margin: 12px 0;
+  font-size: 14px;
+}
+.fleet-office p {
+  font-size: 14px;
+  line-height: 1.55;
+  margin: 12px 0;
+}
+.fleet-office .fleet-switch {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.fleet-office progress {
+  width: 100%;
+  accent-color: #3b7761;
+}

@@ -17,6 +17,7 @@ Open the local URL printed by the server (normally http://localhost:3000).
 npm test           # Railway simulation regression tests
 npm run benchmark:dispatch # Reproducible headless fleet/disruption timings
 npm run benchmark:economy  # Mixed-fleet economy, contracts and account totals
+npm run benchmark:fleet    # Mountain circuit, servicing and fleet accounts
 npm run typecheck  # TypeScript
 npm run lint       # App code; generated component catalog is excluded
 npm run build      # Production Cloudflare Worker + client bundle
@@ -25,13 +26,15 @@ npm start          # Preview the production Worker locally
 
 ## Play
 
-- Select any of twelve steam locomotives from the roster or click its model.
+- Select a steam locomotive from the twelve service slots or click its model. **Fleet & depots** compares and replaces engines, sells an empty engine, and purchases an engine for a vacant slot. The service and wagons remain assigned.
 - Choose **3D** for orbit controls or **Iso** for an orthographic view.
 - **Follow train** follows the selected locomotive in either mode. A queued locomotive shows **Follow when dispatched**: the camera keeps its current view until the train enters a physical berth, then follows it automatically with a smooth zoom. Trackside requires a visible locomotive.
 - Drag to pan in Iso; drag to orbit and right-drag to pan in 3D. Scroll or pinch to zoom.
 - Use **Hold / Release** to dispatch individual trains. Physical blocks and junction movements protect the complete consist.
 - Deliver real passengers and freight into destination demand to earn the displayed tariff. Spend $8,500 on an additional wagon at a station while operating forward, up to six cars per train. Its cargo family follows the service configuration, and the longer consist needs a clear approach.
 - **Economy** opens inventory and demand maps, supply-chain instructions, cargo manifests, wagon refitting, service accounts, local contracts, financing and the complete cash ledger. Coaches carry passengers; flat wagons carry timber/lumber; hoppers carry coal/grain; box wagons carry flour/goods.
+- Alpine Monarch starts at Granite Ridge on a circuit through Summit Pass, Glacier Lake, Eagle Vale, Pinecrest, Ashford, Coalhaven and Cedar Falls. Follow it immediately to see graded mountain running and tunnels.
+- **Fleet & depots** also edits wagon order, installs one upgrade, requests servicing and builds station workshops for $18,000. Engine purchases, sales and upgrades require a stationary train; wagon refits and sales require empty cargo holds. Supplies refill at stations below 25%; workshops restore condition with real cost and downtime. Automatic workshop transfers preserve and resume the original service.
 - Copper Creek starts on the Coalhaven–Grand Junction coal shuttle, Golden Valley on the Millbrook–Grand Junction grain shuttle, Timberline carries timber to the Riverside sawmill and lumber onward, and Red Mesa carries processed goods from Grand Junction. Other trains run passenger services.
 - Loading uses available source stock, destination demand, wagon capacity and configured dwell (12 units/second). Rejected cargo stays aboard and earns nothing until accepted. Deliver it before changing a service or refitting. Consumer stock stays in town rather than becoming another paid return load.
 - Fuel, crew, maintenance and infrastructure are billed each simulation minute. **Accounts** separates revenue, expenses, operating profit, cash and debt. Borrow up to $100,000 at 0.2% interest per simulation minute, or select **Sandbox · unlimited purchasing funds**. Cash overdrafts block standard purchases but do not stop trains.
@@ -58,19 +61,22 @@ npm start          # Preview the production Worker locally
 
 ## World and simulation
 
-Eight towns span an expanded valley with 5.76 times the previous buildable area, connected by thirteen longer curved rail corridors. Procedural geometry supplies terrain, forests, houses, factories, stations, farms, signals, a winding river, bridge decks, locomotives, tenders, and coaches. The terrain is cut beneath the physical tracks and station platforms, with blended shoulders, so expanded yards remain above ground. Construction and undo rebuild these cuts from the original terrain. Wheel animation and fading smoke run in Three.js. Forests and sleepers use instanced meshes; low graphics mode reduces resolution and disables shadows.
+Fourteen towns span a valley and alpine region connected by twenty-two curved corridors. The Phase 5 expansion has 2.54 times the previous buildable area (14.6 times the original Phase 3 area), while preserving the first eight town positions and original running lines and yards. Cedar Falls, Granite Ridge, Summit Pass, Glacier Lake, Eagle Vale and Eastbank Harbor add forests, mining, alpine settlements, a glacial basin and a harbor district. Mountain routes climb and descend gradients up to about 4.1%. Procedural geometry supplies terrain, forests, houses, factories, stations, farms, signals, a winding river, bridge decks, locomotives, tenders, and coaches. Terrain is cut beneath open physical tracks and station platforms with blended shoulders. Alpine tunnel roofs remain intact, masonry portals mark their entrances, and viaduct piers extend to the ground. Engines and wagons pitch with the rails. Construction and undo rebuild these cuts from the original terrain. Wheel animation and fading smoke run in Three.js. Forests and sleepers use instanced meshes; low graphics mode reduces resolution and disables shadows.
 
 The simulation uses fixed 50 ms ticks, physical running lines, connected turnout paths and separate through-platform tracks. Trains wait explicitly off-network until an entire consist can enter a clear berth. Geometry-derived conflict zones, atomic route admission, full-rear clearance and an independent swept collision backstop protect movement. Shared station throats serve three through platforms per town and four at Grand Junction. Physical return loops keep the locomotive leading on normal services. Automatic routing preserves ordered service calls and explicit track preferences, considers occupied alternate routes, and reserves a reachable destination platform before departure.
 
-Acceleration, load-dependent mass, grade resistance, curve limits and advance braking determine actual speed. Geometry and physics use the same scene units; one unit represents 50/9 metres, and displayed construction distances and speeds use that conversion. Physical station approaches add real journey time: the default railway is congested, and individual calls can take considerably longer than isolated runs. Holds retain occupied protection; impossible capacity or direction constraints require a player change. One block per running edge remains the rule. Tunnels, arbitrary mid-track turnouts, locomotive run-arounds, multiplayer and realistic steam thermodynamics remain outside this phase.
+Acceleration, load-dependent mass, grade resistance, curve limits and advance braking determine actual speed. Geometry and physics use the same scene units; one unit represents 50/9 metres, and displayed construction distances and speeds use that conversion. Physical station approaches add real journey time: the default railway is congested, and individual calls can take considerably longer than isolated runs. Holds retain occupied protection; impossible capacity or direction constraints require a player change. One block per running edge remains the rule. Arbitrary mid-track turnouts, locomotive run-arounds, multiplayer and realistic steam thermodynamics remain outside this phase. Tunnel locations derive from the shared terrain and running-line samples; unrestricted portal editing is deferred.
 
 The Alpine Monarch showcase locomotive and tender use three embedded-material GLB detail levels exported from the editable Blender source in `assets/blender`. The rest of the fleet and locomotive portraits remain procedural. Missing showcase assets fall back to the procedural locomotive. No external image assets or audio recordings are required.
 
 ## Code map
 
 - `lib/railway/data.ts`: cities, corridors, and locomotive definitions.
+- `lib/railway/fleet.ts`: locomotive specifications, ordered consists, condition, upgrades, depot jobs, transfers and validated fleet commands.
+- `components/railway/fleet-office.tsx`: locomotive comparison, purchase/sale, servicing, workshops and consist editor.
+- `lib/railway/structures.ts`: shared tunnel and bridge classification.
 - `lib/railway/network.ts`, `terrain.ts`: stable network records, shared sampled geometry, costs, clearance and route planning.
-- `lib/railway/simulation.ts`: fixed ticks, construction commands, services, resource ownership, undo and validated version 6 saves.
+- `lib/railway/simulation.ts`: fixed ticks, construction commands, services, resource ownership, undo and validated version 7 saves.
 - `lib/railway/economy.ts`: finite stock, production/processing/consumption, manifests, tariffs, costs, contracts, debt and journal validation.
 - `components/railway/economy-office.tsx`: supply/demand map, wagon configuration, service accounts, contracts and finance controls.
 - `lib/railway/map.ts`: shared world, construction and camera extents.
@@ -99,7 +105,9 @@ The corrective [Phase 3A implementation](docs/PHASE_3A_SAFETY.md) addresses the 
 A [Safari visual review](docs/EXPANDED_VALLEY.md) checked the overview and improved both track-plan panels. Sustained train/camera interaction, full WebGL visual acceptance, accessibility and the Phase 0 GPU baseline remain open. Headless tests and timings do not certify those checks.
 Optional WebMCP tools (`get_railway_state`, `follow_train`, `set_train_hold`) are registered only when `document.modelContext` is available. No supported browser validation context was available during this implementation, so these experimental integrations have not been verified end to end. Unsupported browsers run the normal interface unchanged.
 
-Version 6 saves add inventories, manifests, wagon families, production counters, contracts, debt and an auditable ledger to the expanded world and physical authority. Load searches v6, then the preserved v5/v4/v3/v2/v1 slots. Version 5 migrates with the same vehicle positions, cash and historic train totals; its generated load percentages are cleared because historic cargo had no inventory provenance. The first real manifest loads on a subsequent departure. Versions 1–4 use incompatible layouts and are rejected atomically with an explanation; no trains are silently relocated or stretched onto the larger map. Start a new railway to use this layout. New railway preserves every saved slot. Current saves restore only after detached geometry, ownership, braking and service-order validation.
+Version 7 saves add engine ownership, specifications, ordered consists, condition, fuel/water, upgrades, workshops, active jobs and suspended services during depot transfers. Version 6 migrates fleet defaults without changing geometry, cargo, cash or authority; version 5 also receives its established economy migration. Older saves retain their own network: start a new railway to use the mountain expansion. Version 6 introduced inventories, manifests, wagon families, production counters, contracts, debt and an auditable ledger. Load searches v7, then the preserved v6, then the preserved v5/v4/v3/v2/v1 slots. Version 5 migrates with the same vehicle positions, cash and historic train totals; its generated load percentages are cleared because historic cargo had no inventory provenance. The first real manifest loads on a subsequent departure. Versions 1–4 use incompatible layouts and are rejected atomically with an explanation; no trains are silently relocated or stretched onto the larger map. Start a new railway to use this layout. New railway preserves every saved slot. Current saves restore only after detached geometry, ownership, braking and service-order validation.
+
+See [Phase 5 fleet and mountain implementation](docs/PHASE_5_FLEET.md) for operating rules, automated evidence and the remaining browser/GPU acceptance gap.
 
 See [Phase 4 economy plan and verification](docs/PHASE_4_ECONOMY.md) for the complete operating rules and acceptance evidence.
 

@@ -85,7 +85,10 @@ void test('R1: all twelve simultaneous services deliver in 1800 seconds and cont
   const s = new Simulation();
   // Preserve the all-services delivery gate using finite passenger inventories.
   // Mixed freight also has an independent progress/conservation soak.
-  s.economy.services.forEach((service) => (service.wagon = 'coaches'));
+  s.economy.services.forEach((service, i) => {
+    service.wagon = 'coaches';
+    s.fleet.units[i].consist.fill('coaches');
+  });
   s.services = locomotives.map((l, id) =>
     planService(s.network, id, `${l.name} service`, l.route, 3.5),
   );
@@ -282,6 +285,7 @@ void test('independent sub-tick sampling covers every vehicle through opposing l
         [edge],
       );
       s.trains[id].cars = 6;
+      s.fleet.units[id].consist = Array(6).fill(s.economy.services[id].wagon);
       s.trains[id].held = false;
       s.trains[id].dwell = 0;
       s.trains[id].motion.departureDue = 0;

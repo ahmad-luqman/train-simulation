@@ -20,7 +20,10 @@ void test('every service follows a connected closed route', () => {
 void test('every locomotive completes sustained service and revenue reconciles under dispatch', () => {
   for (let id = 0; id < locomotives.length; id++) {
     const sim = new Simulation();
-    sim.economy.services.forEach((service) => (service.wagon = 'coaches'));
+    sim.economy.services.forEach((service, i) => {
+      service.wagon = 'coaches';
+      sim.fleet.units[i].consist.fill('coaches');
+    });
     sim.services = locomotives.map((l, id) =>
       planService(sim.network, id, `${l.name} service`, l.route, 3.5),
     );

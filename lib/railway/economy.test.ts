@@ -59,6 +59,7 @@ void test('all three supply chains move finite raw stock through processing and 
     const s = new Simulation(),
       t = s.trains[0];
     s.economy.services[0].wagon = wagon;
+    s.fleet.units[0].consist.fill(s.economy.services[0].wagon);
     const before = town(s, source).stock[input];
     loadCargo(s, t, source, processor);
     assert.equal(town(s, source).stock[input], before - 42);
@@ -68,6 +69,7 @@ void test('all three supply chains move finite raw stock through processing and 
     assert.equal(town(s, processor).stock[input], 0);
     assert.equal(town(s, processor).stock[output], 42);
     s.economy.services[0].wagon = output === 'lumber' ? 'flat' : 'box';
+    s.fleet.units[0].consist.fill(s.economy.services[0].wagon);
     loadCargo(s, t, processor, consumer);
     assert.equal(town(s, processor).stock[output], 0);
     unloadCargo(s, t, consumer);
@@ -130,6 +132,7 @@ void test('wagons, loading dwell and destination acceptance constrain real loads
   const s = new Simulation(),
     t = s.trains[0];
   s.economy.services[0].wagon = 'box';
+  s.fleet.units[0].consist.fill(s.economy.services[0].wagon);
   loadCargo(s, t, 2, 7);
   assert.equal(t.load, 0);
   assert.equal(s.economy.services[0].emptyRuns, 1);
@@ -288,7 +291,7 @@ void test('version 5 migration preserves physical poses and historic accounts wi
   assert.equal(s.treasury, old.treasury);
   assert.equal(s.delivered, old.delivered);
   assert.ok(s.economy.services.every((service) => service.manifest === null));
-  assert.equal(s.save().version, 6);
+  assert.equal(s.save().version, 7);
   assert.equal(legacy.version, 5);
   reconcile(s);
 });
@@ -356,6 +359,7 @@ void test('accepted deliveries to a full consumer cannot create a profitable ret
   for (const c of ['lumber', 'flour', 'goods'] as Cargo[])
     assert.equal(supply(town(s, 1), c), 0);
   s.economy.services[0].wagon = 'box';
+  s.fleet.units[0].consist.fill(s.economy.services[0].wagon);
   s.services[0] = planService(s.network, 0, 'Supply shops', [4, 1], 3.5);
   loadCargo(s, s.trains[0], 4, 1);
   assert.equal(s.trains[0].load, 0);

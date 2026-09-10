@@ -72,6 +72,7 @@ void test('six-car rear clearance protects the actual running line and turnout u
   const s = isolated(),
     t = s.trains[0];
   t.cars = 6;
+  s.fleet.units[t.id].consist = Array(6).fill(s.economy.services[t.id].wagon);
   until(s, () => t.motion.started);
   const route = t.motion.physical.route!,
     interval = s.topology
@@ -156,6 +157,7 @@ void test('terminal departure keeps the locomotive leading through a physical re
   const s = isolated(),
     t = s.trains[0];
   t.cars = 6;
+  s.fleet.units[t.id].consist = Array(6).fill(s.economy.services[t.id].wagon);
   shuttle(s, 0, 0, 1, '0-1');
   t.stopAtStation = true;
   until(s, () => t.held);
@@ -183,6 +185,7 @@ void test('service edits retain every physical platform pose and the occupied ap
   const s = isolated(),
     t = s.trains[0];
   t.cars = 6;
+  s.fleet.units[t.id].consist = Array(6).fill(s.economy.services[t.id].wagon);
   t.stopAtStation = true;
   until(s, () => t.held);
   const before = poses(s, 0),
@@ -294,6 +297,7 @@ void test('all blocking dependencies participate in cycle diagnosis; a protected
   const s = isolated(),
     t = s.trains[0];
   t.cars = 6;
+  s.fleet.units[t.id].consist = Array(6).fill(s.economy.services[t.id].wagon);
   advance(s, 25);
   t.held = true;
   s.step(0.05);
@@ -391,6 +395,7 @@ void test('save/load across acceleration, turnouts, six-car arrivals and return 
     t = s.trains[0];
   shuttle(s, 0, 0, 1, '0-1');
   t.cars = 6;
+  s.fleet.units[t.id].consist = Array(6).fill(s.economy.services[t.id].wagon);
   for (let i = 0; i < 18000; i++) {
     s.step(0.05);
     assertSeparated(s);
