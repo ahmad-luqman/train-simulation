@@ -73,6 +73,7 @@ export default function Game() {
   const [selected, setSelected] = useState(10),
     [mode, setMode] = useState<CameraMode>('iso'),
     [following, setFollowing] = useState(false),
+    [controlsOpen, setControlsOpen] = useState(false),
     [labels, setLabels] = useState(true),
     [cycle, setCycle] = useState(true),
     [sound, setSound] = useState(false),
@@ -584,7 +585,19 @@ export default function Game() {
               {sim.current.network.edges.length} tracks <span>·</span> Est. 1885
             </div>
           </div>
-          <div className="map-toolbar">
+          <button
+            className="map-button compact-controls-toggle"
+            aria-expanded={controlsOpen}
+            aria-controls="railway-map-controls"
+            onClick={() => setControlsOpen(!controlsOpen)}
+          >
+            {controlsOpen ? 'Close controls' : 'Railway controls'}
+          </button>
+          <div
+            id="railway-map-controls"
+            className="map-toolbar"
+            data-open={controlsOpen}
+          >
             <div className="toolbar-row">
               <button
                 className="map-button"
@@ -1225,10 +1238,19 @@ export default function Game() {
                 <TrainFront size={24} color={engine.color} />
                 <span>Tender</span>
               </div>
-              {Array.from({ length: train.cars }, (_, i) => (
+              {sim.current.fleet.units[selected].consist.map((wagon, i) => (
                 <div key={i}>
                   <Box size={23} color={i % 2 ? '#a56e4b' : '#7a8165'} />
-                  <span>{i % 2 ? 'Goods' : 'Coach'}</span>
+                  <span>
+                    {
+                      {
+                        coaches: 'Coach',
+                        flat: 'Flat',
+                        hopper: 'Hopper',
+                        box: 'Box',
+                      }[wagon]
+                    }
+                  </span>
                 </div>
               ))}
             </div>

@@ -10,7 +10,7 @@
 
 ## Acceptance log
 
-Runtime hardening is implemented. Automated evidence and the remaining browser/device, first-time-player and independent-review gates are separated below.
+Runtime hardening is implemented. The user-authorized Chrome walkthrough found and fixed eight groups of issues; its observed passes, screenshots and remaining gaps are recorded in [browser acceptance](qa/phase7/README.md). Device, first-time-player and independent-review gates remain open.
 
 ## Delivered behavior
 
@@ -24,7 +24,7 @@ Runtime hardening is implemented. Automated evidence and the remaining browser/d
 
 ## Automated evidence
 
-- **115/115 regression tests pass** after the final migration fix (90.5 seconds, 11 September 2026), retaining all previous 105 tests. **Typecheck, lint and production build pass.** The existing client-bundle-size and Vinext route-classification warnings remain.
+- **115/115 regression tests pass** after the browser-found fixes (92.25 seconds, 11 September 2026), retaining all previous 105 tests. **Typecheck, lint and production build pass.** The existing client-bundle-size and Vinext route-classification warnings remain.
 - New coverage includes independent manual slots, portable round trips, quota/interrupted writes, corrupt and semantically invalid newest generations, asynchronous transaction completion/failure, autosave isolation, preserved legacy slots, frozen historical v5–v8 migration, atomic malformed-layout rejection, bounded performance samples and reduced-motion camera acquisition.
 - `npm run benchmark:release -- docs/benchmarks/phase7-release.json` completed **3,600 simulated seconds** with all twelve trains, regional weather/events/growth and independent all-vehicle separation on every 50 ms tick. Every service made additional calls in both 1,800-second windows. Six checkpoints validated economy, fleet and region, round-tripped the save library and verified that pause does not advance state. The run took **33.26 seconds** on an Apple M4 Max while regression tests ran concurrently. Accounts reconciled to **$131,040 revenue, $29,074 expenses and $101,966 operating profit**.
 - Node heap samples and headless wall time are included in the report for reproducibility. They are neither GPU measurements nor proof of a one-hour real-time browser memory plateau. The existing swept/sub-tick safety regression remains unchanged.
@@ -32,10 +32,10 @@ Runtime hardening is implemented. Automated evidence and the remaining browser/d
 
 ## Remaining release acceptance and next steps
 
-1. **Browser walkthrough:** tutorial controls, real save/import/export/download behavior, IndexedDB recovery, all four challenges, each quality/time/weather mode, grown towns, follow/trackside/photo cameras and office keyboard traversal. Record console errors and screenshots. The optional browser-testing request in this implementation has not received a response; no browser interaction or visual acceptance is claimed.
-2. **Device matrix:** desktop Safari/Chrome and a real touch device, small portrait/landscape viewports, 200% text enlargement, reduced motion and color-independent signals. Export performance samples for overview, close follow and the busiest junction. Treat 60 FPS desktop/30 FPS low as provisional until target hardware is agreed and measured.
+1. **Complete browser walkthrough:** Chrome verified actual save/import/export, manual and automatic persistence, recovery, the first four tutorial steps and research, construction/routing, follow camera and WebGL loss/restoration followed by a clean scene rebuild. See [evidence and fixes](qa/phase7/README.md). Finish campaign/challenge outcomes, all quality/weather/camera/photo combinations, corrupted-IndexedDB fault injection and the final keyboard/reduced-motion/200% checks. Native computer control failed with `cgWindowNotFound` during zoom testing; the incomplete checks are explicitly listed in the log.
+2. **Device matrix:** Chrome desktop and emulated 375 × 667 / 667 × 375 layouts have initial evidence, including corrected toolbar/footer layout. Finish Safari and real touch hardware, 200% enlargement, reduced-motion persistence and color-independent signal inspection. Export performance samples for overview, close follow and the busiest junction. Treat 60 FPS desktop/30 FPS low as provisional until target hardware is agreed and measured.
 3. **Real-time soak:** sixty minutes including construction, teardown/remount, file loads, quality changes, pause/resume, background tabs, asset failure and forced WebGL context loss/restoration. Inspect retained GPU resources after cleanup. Optimize only the measured bottleneck; a worker migration and extra effects remain conditional.
 4. **Player balancing:** record a first-time player's campaign and challenge attempts, including confusing steps, first delivery time, profitable routes and maintenance pressure. Existing deterministic completions establish feasibility. They do not justify new difficulty multipliers or certify usability; campaign costs and scenario rules are preserved until this evidence exists.
-5. **Independent physical-system review and final publication smoke test** remain open. No independent-review result or browser/GPU pass is inferred from automated tests.
+5. **Independent physical-system review and final publication smoke test** remain open. No independent-review result or untested browser/GPU pass is inferred from automated tests.
 
 This delivers the Phase 7 runtime hardening work. The game is not yet certified release-ready while the acceptance items above remain open.

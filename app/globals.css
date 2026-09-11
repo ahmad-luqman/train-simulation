@@ -569,7 +569,7 @@ p {
 }
 .follow-banner {
   position: absolute;
-  top: 130px;
+  bottom: 145px;
   left: 29px;
   border: 1px solid #cdd9c4;
   background: #f7f8e9e8;
@@ -1567,7 +1567,6 @@ p {
   }
   .follow-banner {
     left: 20px;
-    top: 121px;
     font-size: 10px;
   }
   .notification {
@@ -2521,4 +2520,75 @@ html[data-reduced-motion='true'] *::after {
   border: 0;
   padding: 0;
   margin: 0;
+}
+
+/* Narrow maps keep the railway visible until its controls are requested. */
+.compact-controls-toggle {
+  display: none;
+}
+.photo-mode .compact-controls-toggle {
+  display: none !important;
+}
+@container (max-width: 800px) {
+  .compact-controls-toggle {
+    display: flex;
+    position: absolute;
+    top: 155px;
+    left: 14px;
+    z-index: 4;
+  }
+  .map-toolbar {
+    display: none;
+    top: 208px;
+    max-height: calc(100% - 225px);
+    overflow-y: auto;
+    padding: 12px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: var(--panel);
+    z-index: 5;
+  }
+  .map-toolbar[data-open='true'] {
+    display: flex;
+  }
+  .map-toolbar .toolbar-row {
+    flex-shrink: 0;
+  }
+}
+@media (max-width: 700px) {
+  .dispatch-bar {
+    height: auto;
+    min-height: 95px;
+  }
+}
+@media (max-height: 500px) and (max-width: 1100px) {
+  .map-title {
+    top: 8px;
+  }
+  .map-title .eyebrow,
+  .map-title > div:last-child {
+    display: none;
+  }
+  .map-title h1 {
+    font-size: 22px;
+    margin: 0 0 4px;
+  }
+  .compact-controls-toggle {
+    top: 8px;
+    left: auto;
+    right: 14px;
+  }
+  .map-toolbar {
+    top: 60px;
+    max-height: calc(100% - 70px);
+  }
+  .follow-banner {
+    bottom: 75px;
+  }
+  .mobile-actions {
+    bottom: 15px;
+  }
+  .map-bottom-left {
+    display: none;
+  }
 }

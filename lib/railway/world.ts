@@ -124,7 +124,7 @@ export class RailwayWorld {
     });
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.75));
     this.renderer.shadowMap.enabled = true;
-    this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    this.renderer.shadowMap.type = THREE.PCFShadowMap;
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
     this.renderer.toneMappingExposure = 1.25;
@@ -1480,6 +1480,15 @@ export class RailwayWorld {
   private contextLostHandler = (event: Event) => {
     event.preventDefault();
     this.contextLost = true;
+    // Release renderer listeners while the lost context still owns them. Three
+    // replaces its GPU caches on restoration; old geometry listeners otherwise
+    // try to delete invalid buffers during a later rebuild or unmount. Disposing
+    // GPU allocations preserves the CPU geometry/material data for re-upload.
+    this.rememberResources(this.scene);
+    this.resources.forEach((geometry) => geometry.dispose());
+    this.materials.forEach((material) => material.dispose());
+    this.sunlight.shadow.map?.dispose();
+    this.sunlight.shadow.map = null;
     this.sim.paused = true;
     this.previous = 0;
     this.audio.silence();

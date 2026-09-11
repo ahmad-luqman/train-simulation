@@ -1,0 +1,32 @@
+{
+  "date": "2026-09-11T13:54:26.901Z",
+  "browser": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/152.0.0.0 Safari/537.36",
+  "viewport": [
+    1728,
+    886
+  ],
+  "pixelRatio": 2,
+  "simulationSeconds": 51.449999999999214,
+  "trains": 12,
+  "diagnostics": {
+    "samples": 1800,
+    "frameP50": 8.3,
+    "frameP95": 16.7,
+    "frameP99": 17.4,
+    "cpuP95": 10.4,
+    "viewport": [
+      1136,
+      731
+    ],
+    "camera": "iso",
+    "contextLost": false,
+    "fps": 113,
+    "calls": 3588,
+    "triangles": 1118704,
+    "geometries": 2495,
+    "textures": 3,
+    "particles": 56,
+    "quality": "balanced",
+    "showcase": "ready"
+  }
+}

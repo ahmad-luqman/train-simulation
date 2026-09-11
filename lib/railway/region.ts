@@ -40,13 +40,13 @@ export const TUTORIAL = [
   {
     id: 'build',
     title: 'Construct a line',
-    text: 'Pause and build a parallel line on Grand Junction–Riverside, using the negative bend side. It gives your freight shuttle its own path.',
+    text: 'Pause, open Build & route, choose Second running line, Grand Junction–Riverside and Left of main track, then build. It gives your freight shuttle its own path.',
     panel: 'build',
   },
   {
     id: 'service',
     title: 'Configure a service',
-    text: 'In Dispatcher set the new line to Both directions. Stop Riverside provisions at a station, apply Grand Junction–Riverside and the new track in Build & route, then release both starter trains.',
+    text: 'In Dispatcher set the new line to Both directions. In Build & route → Services, select Riverside provisions (Timberline), keep Grand Junction–Riverside as its stops, choose the new track and assign the service. The starters are already held for editing; release both when ready.',
     panel: 'build',
   },
   {

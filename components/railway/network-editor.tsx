@@ -24,7 +24,8 @@ import {
 import { Input } from '@/components/ui/input';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import { Slider } from '@/components/ui/slider';
-import { locomotives, money } from '@/lib/railway/data';
+import { money } from '@/lib/railway/data';
+import { ENGINES } from '@/lib/railway/fleet';
 import {
   edgeAt,
   nodeAt,
@@ -673,9 +674,10 @@ export function NetworkEditor({
                 setPreferred([]);
               }}
             >
-              {locomotives.map((l, id) => (
-                <NativeSelectOption key={l.name} value={id}>
-                  {l.name}
+              {sim.fleet.units.map((unit, id) => (
+                <NativeSelectOption key={id} value={id}>
+                  {sim.services[id].name} ·{' '}
+                  {unit.owned ? ENGINES[unit.engine].name : 'Vacant service'}
                 </NativeSelectOption>
               ))}
             </NativeSelect>
@@ -866,7 +868,7 @@ export function NetworkEditor({
               )
             }
           >
-            Assign service to {locomotives[trainId].name}
+            Assign service to {ENGINES[sim.fleet.units[trainId].engine].name}
           </button>
         </TabsContent>
         <TabsContent value="manage">

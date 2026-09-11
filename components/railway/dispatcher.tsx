@@ -8,7 +8,7 @@ import {
   NativeSelect,
   NativeSelectOption,
 } from '@/components/ui/native-select';
-import { locomotives } from '@/lib/railway/data';
+import { ENGINES } from '@/lib/railway/fleet';
 import { nodeAt } from '@/lib/railway/network';
 import {
   consistLength,
@@ -34,6 +34,8 @@ export function Dispatcher({
   changed: () => void;
 }) {
   const office = useOfficeFocus(close);
+  const trainName = (id: number) =>
+    `${sim.services[id].name} · ${sim.fleet.units[id].owned ? ENGINES[sim.fleet.units[id].engine].name : 'Vacant service'}`;
   const [settings, setSettings] = useState<DispatchSettings>(() =>
     structuredClone(sim.settings(selected)),
   );
@@ -123,7 +125,7 @@ export function Dispatcher({
       {snapshot.cycles.map((cycle) => (
         <div className="editor-warning" key={cycle.join('-')}>
           <strong>Circular wait</strong>
-          <p>{cycle.map((id) => locomotives[id].name).join(' → ')}</p>
+          <p>{cycle.map((id) => trainName(id)).join(' → ')}</p>
           <p>
             Release a held train or add a physical platform at the blocked
             destination. Automatic routing checks alternate paths before
@@ -253,7 +255,7 @@ export function Dispatcher({
                 r="3"
                 fill={t.id === selected ? '#7752a0' : '#273c30'}
               >
-                <title>{locomotives[t.id].name}</title>
+                <title>{trainName(t.id)}</title>
               </circle>
             );
           })}
@@ -366,7 +368,7 @@ export function Dispatcher({
             <li key={r.resource}>
               <span>{sim.resourceLabel(r.resource)}</span>
               <button onClick={() => select(r.owner)}>
-                {locomotives[r.owner].name}
+                {trainName(r.owner)}
               </button>
               <small>
                 {r.releaseAt === null
@@ -383,12 +385,12 @@ export function Dispatcher({
         {snapshot.waits.map((wait) => (
           <li key={wait.id}>
             <button onClick={() => select(wait.id)}>
-              {locomotives[wait.id].name}
+              {trainName(wait.id)}
             </button>
             <span>
               {wait.message}
               {wait.owners.length > 0 &&
-                ` Waiting for: ${wait.owners.map((id) => locomotives[id].name).join(', ')}`}
+                ` Waiting for: ${wait.owners.map((id) => trainName(id)).join(', ')}`}
             </span>
             <small>{Math.floor(wait.seconds)} s waiting</small>
           </li>
@@ -401,9 +403,9 @@ export function Dispatcher({
           value={selected}
           onChange={(e) => select(Number(e.target.value))}
         >
-          {locomotives.map((l, id) => (
+          {sim.fleet.units.map((_, id) => (
             <NativeSelectOption key={id} value={id}>
-              {l.name}
+              {trainName(id)}
             </NativeSelectOption>
           ))}
         </NativeSelect>
@@ -535,7 +537,7 @@ export function Dispatcher({
                 min="0"
                 max={max}
                 step="0.5"
-                value={settings[key]}
+                value={Number.isFinite(settings[key]) ? settings[key] : ''}
                 onChange={(e) =>
                   setSettings({ ...settings, [key]: e.target.valueAsNumber })
                 }

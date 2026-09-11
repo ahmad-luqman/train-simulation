@@ -1,6 +1,6 @@
 'use client';
 /* eslint-disable react/react-compiler -- Commands operate on the authoritative mutable simulation, like the other railway offices. */
-import { useState } from 'react';
+import { useLayoutEffect, useRef, useState } from 'react';
 import {
   Dialog,
   DialogContent,
@@ -48,10 +48,40 @@ export function SaveOffice({
     label: string;
     run: () => void | Promise<void>;
   } | null>(null);
+  const dialog = useRef<HTMLDivElement>(null);
+  const fieldset = useRef<HTMLFieldSetElement>(null);
+  const confirmButton = useRef<HTMLButtonElement>(null);
+  const returnFocus = useRef<HTMLElement | null>(null);
+  useLayoutEffect(() => {
+    if (!open || busy) return;
+    if (pending) {
+      confirmButton.current?.focus();
+      return;
+    }
+    const target = returnFocus.current;
+    returnFocus.current = null;
+    if (
+      target?.isConnected &&
+      (document.activeElement === document.body ||
+        document.activeElement === dialog.current)
+    )
+      target.focus();
+  }, [busy, open, pending]);
+  function rememberFocus() {
+    if (fieldset.current?.contains(document.activeElement))
+      returnFocus.current = document.activeElement as HTMLElement;
+  }
+  function confirm(request: NonNullable<typeof pending>) {
+    rememberFocus();
+    setMessage('');
+    setPending(request);
+  }
   async function refresh() {
     setEntries(await browserSaveStore().list());
   }
   async function action(run: () => void | Promise<void>) {
+    if (!pending) rememberFocus();
+    setMessage('');
     setBusy(true);
     try {
       await run();
@@ -90,7 +120,7 @@ export function SaveOffice({
     );
   }
   function requestLoad(slot: SaveSlot) {
-    setPending({
+    confirm({
       label:
         'Replace the current railway? The recovery setting below controls whether your current railway is kept.',
       run: async () => load((await browserSaveStore().load(slot)).state),
@@ -109,7 +139,7 @@ export function SaveOffice({
       }}
     >
       <DialogTrigger className="button">Saves</DialogTrigger>
-      <DialogContent className="save-dialog">
+      <DialogContent ref={dialog} className="save-dialog">
         <DialogHeader>
           <DialogTitle>Saved railways</DialogTitle>
           <DialogDescription>
@@ -117,7 +147,7 @@ export function SaveOffice({
             this browser. Export a file to keep a portable backup.
           </DialogDescription>
         </DialogHeader>
-        <fieldset disabled={busy} className="save-fieldset">
+        <fieldset ref={fieldset} disabled={busy} className="save-fieldset">
           <label className="save-name">
             Save name
             <input
@@ -158,7 +188,7 @@ export function SaveOffice({
                           setMessage(`Saved to slot ${i + 1}.`);
                         };
                         if (entry)
-                          setPending({
+                          confirm({
                             label: `Overwrite ${entry.name} in slot ${i + 1}? The previous generation remains available for corruption recovery.`,
                             run,
                           });
@@ -203,6 +233,7 @@ export function SaveOffice({
               <p>{pending.label}</p>
               <div className="save-row-actions">
                 <button
+                  ref={confirmButton}
                   className="button primary"
                   onClick={() => {
                     const run = pending.run;
@@ -240,7 +271,7 @@ export function SaveOffice({
             <button
               className="button"
               onClick={() =>
-                setPending({
+                confirm({
                   label:
                     'Load a compatible save from the original browser slot? The recovery setting below controls whether your current railway is kept.',
                   run: async () => load(await browserSaveStore().legacy()),
@@ -259,7 +290,8 @@ export function SaveOffice({
                 const file = e.target.files?.[0];
                 e.target.value = '';
                 if (!file) return;
-                try {
+                setPending(null);
+                await action(async () => {
                   if (file.size > SAVE_LIMIT)
                     throw new Error('This file is too large (maximum 16 MB).');
                   const state = parseRailway(await file.text());
@@ -267,13 +299,7 @@ export function SaveOffice({
                     label: `Load ${file.name}? The recovery setting below controls whether your current railway is kept.`,
                     run: () => load(state),
                   });
-                } catch (error) {
-                  setMessage(
-                    error instanceof Error
-                      ? error.message
-                      : 'This file could not be read.',
-                  );
-                }
+                });
               }}
             />
           </label>
