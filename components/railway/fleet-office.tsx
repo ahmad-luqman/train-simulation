@@ -1,4 +1,5 @@
 'use client';
+import { useOfficeFocus } from '@/hooks/use-office-focus';
 /* eslint-disable react/react-compiler -- Samples the authoritative mutable simulation. */
 import { useState } from 'react';
 import { X } from 'lucide-react';
@@ -37,6 +38,7 @@ export function FleetOffice({
   close: () => void;
   changed: () => void;
 }) {
+  const office = useOfficeFocus(close);
   const [feedback, setFeedback] = useState('');
   const [engine, setEngine] = useState(10);
   const t = sim.trains[selected],
@@ -62,6 +64,7 @@ export function FleetOffice({
   };
   return (
     <section
+      ref={office}
       className="network-editor economy-office fleet-office"
       aria-label="Fleet and depots"
     >

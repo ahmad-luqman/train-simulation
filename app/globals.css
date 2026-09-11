@@ -2386,3 +2386,139 @@ p {
     max-width: calc(100% - 28px);
   }
 }
+
+/* Release controls follow the existing railway office palette. */
+.save-dialog {
+  width: min(42rem, calc(100vw - 2rem));
+  max-width: 42rem;
+  max-height: calc(100dvh - 2rem);
+  overflow-y: auto;
+  font-size: 1rem;
+}
+.save-list {
+  display: grid;
+  gap: 0.65rem;
+}
+.save-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  border: 1px solid var(--border);
+  padding: 0.75rem;
+  border-radius: 0.35rem;
+}
+.save-row > div:first-child {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.save-row small {
+  display: block;
+  margin-top: 0.3rem;
+  font-size: 0.8125rem;
+}
+.save-row-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+.save-name {
+  display: grid;
+  gap: 0.4rem;
+  font-size: 0.875rem;
+}
+.save-name input {
+  width: 100%;
+  min-width: 0;
+  border: 1px solid var(--border);
+  padding: 0.6rem;
+  border-radius: 0.3rem;
+}
+.performance-report {
+  white-space: pre-wrap;
+  font-size: 0.8125rem;
+  margin: 0.5rem 0;
+}
+.context-notice {
+  position: absolute;
+  z-index: 35;
+  top: 1rem;
+  left: 10%;
+  right: 10%;
+  padding: 1rem;
+  background: var(--panel);
+  border: 2px solid #a05232;
+}
+button:focus-visible,
+input:focus-visible,
+select:focus-visible,
+summary:focus-visible,
+canvas:focus-visible {
+  outline: 3px solid #54733d;
+  outline-offset: 3px;
+}
+[data-slot='dialog-content'] {
+  max-height: calc(100dvh - 2rem);
+  overflow-y: auto;
+}
+.button,
+.map-button,
+.quality-control select {
+  font-size: 0.875rem !important;
+  min-height: 2.25rem;
+}
+.train-row strong,
+.section-label h3,
+.city-label strong,
+.train-actions .primary {
+  font-size: 0.875rem;
+}
+.train-row small,
+.engine-spec,
+.dispatch-wire p {
+  font-size: 0.8125rem;
+}
+.world-canvas canvas {
+  touch-action: none;
+}
+@media (pointer: coarse) {
+  .button,
+  .map-button,
+  .icon-button,
+  .speed-control button {
+    min-height: 2.75rem;
+    min-width: 2.75rem;
+  }
+}
+@media (max-width: 700px) {
+  .quality-control {
+    display: flex;
+  }
+  .save-row {
+    flex-wrap: wrap;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation: none !important;
+    transition: none !important;
+    scroll-behavior: auto !important;
+  }
+}
+html[data-reduced-motion='true'] *,
+html[data-reduced-motion='true'] *::before,
+html[data-reduced-motion='true'] *::after {
+  animation: none !important;
+  transition: none !important;
+  scroll-behavior: auto !important;
+}
+.save-fieldset {
+  display: grid;
+  gap: 1rem;
+  min-width: 0;
+  border: 0;
+  padding: 0;
+  margin: 0;
+}

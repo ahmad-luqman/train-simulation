@@ -49,6 +49,8 @@ export type Crossover = {
   cost: Cost;
 };
 export type RailNetwork = {
+  /** Present only on migrated pre-mountain railways; keeps their protected base map explicit. */
+  baseline?: 'valley';
   crossovers?: Crossover[];
   nodes: NetworkNode[];
   edges: TrackEdge[];

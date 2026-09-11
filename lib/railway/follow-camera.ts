@@ -29,6 +29,7 @@ export class FollowCamera {
     focus: Vector3,
     subject: Vector3 | null,
     delta: number,
+    reducedMotion = false,
   ) {
     if (!subject) {
       this.waiting = true;
@@ -39,7 +40,7 @@ export class FollowCamera {
       this.transitioning = true;
       this.transitionTime = 0;
     }
-    const alpha = 1 - Math.exp(-Math.max(0, delta) * 5);
+    const alpha = reducedMotion ? 1 : 1 - Math.exp(-Math.max(0, delta) * 5);
     const movement = subject.clone().sub(focus).multiplyScalar(alpha);
     focus.add(movement);
     if (this.transitioning) {

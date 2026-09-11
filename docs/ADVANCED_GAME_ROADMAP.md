@@ -2,7 +2,7 @@
 
 **Purpose:** Turn the current railway sandbox into a visually rich management game with meaningful construction, dispatch, economic, and fleet decisions.
 **Baseline:** Current repository at `315b7fb`, reviewed 9 September 2026.
-**Status:** Phases 1–3 and the corrective **Phase 3A implementation are delivered**, followed by the requested [expanded valley and locomotive-leading station redesign](EXPANDED_VALLEY.md). [Phase 3A safety notes](PHASE_3A_SAFETY.md) record the plan, physical topology, automated acceptance and measured headless performance. The [audit of `b1c2d05`](PHASE_3_COLLISION_AUDIT.md) remains preserved as regression evidence. All twelve services deliver in the 1,800-second run and continue through a second 1,800-second window. **Phase 4 runtime implementation is delivered:** finite inventories, three supply chains, compatible freight wagons, operating accounts, contracts, financing and version 6 saves. See [Phase 4 plan and evidence](PHASE_4_ECONOMY.md). The user explicitly requested Phase 4 implementation on 10 September 2026; browser/visual acceptance, independent review and the Phase 0 GPU baseline remain open and are not certified by the automated results. **Phase 5 runtime implementation is delivered**, including the expanded mountain railway. See [Phase 5 implementation and evidence](PHASE_5_FLEET.md). **Phase 6 runtime implementation is delivered:** guided campaign, real-action tutorial, milestone research, supply-led growth, deterministic weather/events, four scenarios, achievements, results and v8 saves. See [Phase 6 plan and verification](PHASE_6_REGION.md). Phase 7 remains planned; browser/GPU and independent-review gates remain open.
+**Status:** Phases 1–3 and the corrective **Phase 3A implementation are delivered**, followed by the requested [expanded valley and locomotive-leading station redesign](EXPANDED_VALLEY.md). [Phase 3A safety notes](PHASE_3A_SAFETY.md) record the plan, physical topology, automated acceptance and measured headless performance. The [audit of `b1c2d05`](PHASE_3_COLLISION_AUDIT.md) remains preserved as regression evidence. All twelve services deliver in the 1,800-second run and continue through a second 1,800-second window. **Phase 4 runtime implementation is delivered:** finite inventories, three supply chains, compatible freight wagons, operating accounts, contracts, financing and version 6 saves. See [Phase 4 plan and evidence](PHASE_4_ECONOMY.md). The user explicitly requested Phase 4 implementation on 10 September 2026; browser/visual acceptance, independent review and the Phase 0 GPU baseline remain open and are not certified by the automated results. **Phase 5 runtime implementation is delivered**, including the expanded mountain railway. See [Phase 5 implementation and evidence](PHASE_5_FLEET.md). **Phase 6 runtime implementation is delivered:** guided campaign, real-action tutorial, milestone research, supply-led growth, deterministic weather/events, four scenarios, achievements, results and v8 saves. See [Phase 6 plan and verification](PHASE_6_REGION.md). **Phase 7 runtime hardening is implemented:** transactional multi-slot saves, rotating autosaves, portable files, recovery, reduced motion, keyboard/focus/touch improvements, renderer recovery and bounded performance reporting. See [Phase 7 implementation and acceptance](PHASE_7_RELEASE.md). Browser/GPU, first-time-player balancing and independent-review gates remain open; this is not a release certification.
 
 ## Recommended direction
 
@@ -334,6 +334,8 @@ Treat three requirements separately: **collision detection** checks physical occ
 
 ## Phase 7 — Make it robust and release ready
 
+**Runtime hardening implemented; acceptance still open.** See [the implementation plan, historical migration evidence and stress results](PHASE_7_RELEASE.md). Browser device profiling and recorded player sessions must guide optimization and difficulty tuning. No speculative worker migration or extra fleet capacity was added.
+
 **Player benefit:** The advanced game stays responsive, readable, and recoverable through long sessions.
 
 ### Work
@@ -348,11 +350,11 @@ Treat three requirements separately: **collision detection** checks physical occ
 
 ### Provisional performance targets
 
-These are proposed engineering budgets, not measurements of the current build. Confirm the exact test devices and adjust the budgets in Phase 0.
+These are proposed engineering budgets, not measurements of the current build. Confirm the exact test devices and adjust the budgets in Phase 0. Phase 7 updates the representative scene from the obsolete proposed 24-train/eight-town profile to the implemented twelve-slot/fourteen-town map. This changes the declared workload, not the FPS targets; no 24-train performance claim is made.
 
 | Test profile     | Scenario                                               | Proposed target                                                   |
 | ---------------- | ------------------------------------------------------ | ----------------------------------------------------------------- |
-| Balanced desktop | 1080p overview, 24 trains, 8 towns, active junctions   | Around 60 FPS with 95th-percentile frame time at or below 22 ms   |
+| Balanced desktop | 1080p overview, 12 trains, 14 towns, active junctions  | Around 60 FPS with 95th-percentile frame time at or below 22 ms   |
 | Low graphics     | 720p equivalent internal resolution, same simulation   | At least 30 FPS with 95th-percentile frame time at or below 40 ms |
 | Close follow     | Showcase locomotive, station, smoke, and water         | Meets the chosen profile without continual asset-loading stalls   |
 | Long session     | 60 minutes including construction, resets, and loading | No continuing growth in retained resources after cleanup          |

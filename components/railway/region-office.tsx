@@ -1,4 +1,5 @@
 'use client';
+import { useOfficeFocus } from '@/hooks/use-office-focus';
 /* eslint-disable react/react-compiler -- Samples the authoritative mutable simulation. */
 import { useState } from 'react';
 import { X } from 'lucide-react';
@@ -33,6 +34,7 @@ export function RegionOffice({
   navigate: (panel: string) => void;
   newSession: () => void;
 }) {
+  const office = useOfficeFocus(close);
   const [feedback, setFeedback] = useState('');
   const r = sim.region,
     sky = conditions(sim),
@@ -53,6 +55,7 @@ export function RegionOffice({
   };
   return (
     <section
+      ref={office}
       className="network-editor economy-office region-office"
       aria-label="Region and goals"
     >

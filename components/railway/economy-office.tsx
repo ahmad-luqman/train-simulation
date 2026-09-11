@@ -1,4 +1,5 @@
 'use client';
+import { useOfficeFocus } from '@/hooks/use-office-focus';
 /* eslint-disable react/react-compiler -- Samples the authoritative mutable simulation. */
 import { setMoneyMode } from '@/lib/railway/economy';
 import { useState } from 'react';
@@ -43,6 +44,7 @@ export function EconomyOffice({
   close: () => void;
   changed: () => void;
 }) {
+  const office = useOfficeFocus(close);
   const [cargo, setCargo] = useState<Cargo>('timber');
   const [feedback, setFeedback] = useState('');
   const [page, setPage] = useState(0);
@@ -68,6 +70,7 @@ export function EconomyOffice({
   const ledger = [...e.ledger].reverse().slice(page * 30, (page + 1) * 30);
   return (
     <section
+      ref={office}
       className="network-editor economy-office"
       aria-label="Railway economy"
     >

@@ -1043,6 +1043,18 @@ export class Simulation {
     const candidate = new Simulation();
     const s = structuredClone(raw);
     if (raw.version >= 2) {
+      // Actual v5/v6 saves predate the alpine expansion. Preserve their smaller
+      // protected base map through future v8 round trips, including custom towns.
+      if (Number(raw.version) < 7 && Array.isArray(s.network?.stations)) {
+        const original = s.network.stations.filter(
+          (station) => station && station.built === false,
+        );
+        if (
+          original.length === 8 &&
+          original.every((station) => station.node < 8)
+        )
+          s.network.baseline = 'valley';
+      }
       validateNetwork(s.network);
       candidate.network = s.network;
       if (
@@ -1305,6 +1317,7 @@ function validCost(cost: Cost) {
 function validateNetwork(n: RailNetwork) {
   if (
     !n ||
+    (n.baseline !== undefined && n.baseline !== 'valley') ||
     !Array.isArray(n.nodes) ||
     !Array.isArray(n.edges) ||
     !Array.isArray(n.stations) ||
@@ -1480,7 +1493,22 @@ function validateNetwork(n: RailNetwork) {
     }
   }
   const baseline = createNetwork();
+  if (n.baseline === 'valley') {
+    baseline.nodes = baseline.nodes.filter((node) => node.id < 8);
+    baseline.edges = baseline.edges.filter((edge) => edge.a < 8 && edge.b < 8);
+    baseline.stations = baseline.stations.filter((station) => station.node < 8);
+  }
   if (
+    n.edges.some(
+      (edge) =>
+        !edge.built &&
+        !baseline.edges.some((original) => original.id === edge.id),
+    ) ||
+    n.stations.some(
+      (station) =>
+        !station.built &&
+        !baseline.stations.some((original) => original.id === station.id),
+    ) ||
     baseline.nodes.some((b) => {
       const a = nodeAt(n, b.id);
       return !a || a.x !== b.x || a.y !== b.y || a.z !== b.z;

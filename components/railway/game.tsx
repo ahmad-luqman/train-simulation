@@ -24,7 +24,6 @@ import {
   Play,
   Plus,
   RotateCcw,
-  Save,
   Sun,
   TrainFront,
   X,
@@ -63,14 +62,8 @@ import type { RailwayWorld, CameraMode } from '@/lib/railway/world';
 import { makePortraits } from '@/lib/railway/portraits';
 import type { AudioMix } from '@/lib/railway/audio';
 import { registerRailwayTools } from '@/lib/railway/webmcp';
-const SAVE_KEY = 'steam-atlas-save-v8';
-const PHASE_5_SAVE_KEY = 'steam-atlas-save-v7';
-const PHASE_4_SAVE_KEY = 'steam-atlas-save-v6';
-const PHASE_3B_SAVE_KEY = 'steam-atlas-save-v5';
-const PHASE_3A_SAVE_KEY = 'steam-atlas-save-v4';
-const PHASE_3_SAVE_KEY = 'steam-atlas-save-v3';
-const PREVIOUS_SAVE_KEY = 'steam-atlas-save-v2';
-const LEGACY_SAVE_KEY = 'steam-atlas-save-v1';
+import { browserSaveStore } from '@/lib/railway/browser-storage';
+import { SaveOffice, downloadFile } from './save-office';
 export default function Game() {
   'use no memo'; // The mutable simulation is sampled by a render timer, outside React Compiler ownership.
   const [simulation] = useState(() => new Simulation());
@@ -105,7 +98,12 @@ export default function Game() {
     [economyOpen, setEconomyOpen] = useState(false),
     [fleetOpen, setFleetOpen] = useState(false),
     [regionOpen, setRegionOpen] = useState(false),
-    [sessionMode, setSessionMode] = useState<SessionMode>('campaign');
+    [sessionMode, setSessionMode] = useState<SessionMode>('campaign'),
+    [reducedMotion, setReducedMotion] = useState(false),
+    [resetBusy, setResetBusy] = useState(false),
+    [resetRecovery, setResetRecovery] = useState(true);
+  const autosaveClock = useRef(0);
+  const autosaveFailed = useRef(false);
   function selectTrain(id: number) {
     setSelected(id);
     if (sim.current.fleet.units[id]?.owned) recordAction(sim.current, 'select');
@@ -124,7 +122,32 @@ export default function Game() {
             setDetailsOpen(true);
           });
           world.current = instance;
-          setPortraits(makePortraits());
+          instance.onCameraManual = () => setFollowing(false);
+          instance.onContextChange = (lost) => {
+            setPaused(sim.current.paused);
+            setNotice(
+              lost
+                ? 'Graphics interrupted. Railway paused; you can still save or export it.'
+                : 'Graphics restored. Release pause when you are ready.',
+            );
+          };
+          const reduced = window.matchMedia(
+            '(prefers-reduced-motion: reduce)',
+          ).matches;
+          let preference = reduced;
+          try {
+            const stored = localStorage.getItem('steam-atlas-reduced-motion');
+            if (stored !== null) preference = stored === 'true';
+          } catch {
+            /* Device storage is optional. */
+          }
+          instance.setReducedMotion(preference);
+          setReducedMotion(preference);
+          try {
+            setPortraits(makePortraits());
+          } catch {
+            /* Portraits are optional; keep the playable scene. */
+          }
           setReady(true);
         } catch (e) {
           setError(
@@ -135,7 +158,9 @@ export default function Game() {
       .catch(() => {
         if (active) setError('Unable to load the 3D engine. Please reload.');
       });
-    const timer = window.setInterval(() => setTick((t) => t + 1), 300);
+    const timer = window.setInterval(() => {
+      if (!document.hidden) setTick((t) => t + 1);
+    }, 300);
     return () => {
       active = false;
       clearInterval(timer);
@@ -163,6 +188,20 @@ export default function Game() {
       if (following) world.current.follow(selected);
     }
   }, [selected, following]);
+  useEffect(() => {
+    const media = window.matchMedia('(prefers-reduced-motion: reduce)');
+    const update = () => {
+      try {
+        if (localStorage.getItem('steam-atlas-reduced-motion') !== null) return;
+      } catch {
+        /* Follow the system when storage is unavailable. */
+      }
+      setReducedMotion(media.matches);
+      world.current?.setReducedMotion(media.matches);
+    };
+    media.addEventListener('change', update);
+    return () => media.removeEventListener('change', update);
+  }, []);
   useEffect(() => {
     if (!notice) return;
     const t = setTimeout(() => setNotice(''), 4000);
@@ -213,44 +252,60 @@ export default function Game() {
     if (world.current) world.current.audio.mix = next;
   }
   function pause() {
+    if (world.current?.contextLost) {
+      setNotice('The railway stays paused until graphics recover.');
+      return;
+    }
     sim.current.paused = !sim.current.paused;
     setPaused(sim.current.paused);
   }
-  function save() {
-    try {
-      localStorage.setItem(SAVE_KEY, JSON.stringify(sim.current.save()));
-      setNotice('Your railway has been saved on this device.');
-    } catch {
-      setNotice('Saving is unavailable in this browser.');
-    }
+  function restored(state: ReturnType<Simulation['save']>) {
+    sim.current.restore(state);
+    sim.current.paused = true;
+    sim.current.speed = 1;
+    setPaused(true);
+    setSpeed(1);
+    setSelected(
+      Math.max(
+        0,
+        sim.current.fleet.units.findIndex((unit) => unit.owned),
+      ),
+    );
+    setEditorOpen(false);
+    setDispatcherOpen(false);
+    setFleetOpen(false);
+    setRegionOpen(false);
+    setEconomyOpen(false);
+    autosaveClock.current = 0;
+    overview();
+    setTick((t) => t + 1);
   }
-  function load() {
-    try {
-      const data =
-        localStorage.getItem(SAVE_KEY) ??
-        localStorage.getItem(PHASE_5_SAVE_KEY) ??
-        localStorage.getItem(PHASE_4_SAVE_KEY) ??
-        localStorage.getItem(PHASE_3B_SAVE_KEY) ??
-        localStorage.getItem(PHASE_3A_SAVE_KEY) ??
-        localStorage.getItem(PHASE_3_SAVE_KEY) ??
-        localStorage.getItem(PREVIOUS_SAVE_KEY) ??
-        localStorage.getItem(LEGACY_SAVE_KEY);
-      if (!data) {
-        setNotice('No local save yet. Use Save to keep your railway.');
+  useEffect(() => {
+    const interval = window.setInterval(async () => {
+      if (
+        !ready ||
+        document.hidden ||
+        sim.current.paused ||
+        world.current?.photoMode ||
+        world.current?.contextLost
+      )
         return;
+      autosaveClock.current += 1;
+      if (autosaveClock.current < 120) return;
+      autosaveClock.current = 0;
+      try {
+        await browserSaveStore().autosave(sim.current.save());
+        autosaveFailed.current = false;
+      } catch {
+        if (!autosaveFailed.current)
+          setNotice(
+            'Autosave could not write to device storage. Use Saves → Export current railway.',
+          );
+        autosaveFailed.current = true;
       }
-      sim.current.restore(JSON.parse(data));
-      setEditorOpen(false);
-      setDispatcherOpen(false);
-      setFleetOpen(false);
-      setRegionOpen(false);
-      setEconomyOpen(false);
-      setTick((t) => t + 1);
-      setNotice('Your railway has been restored.');
-    } catch {
-      setNotice('That save could not be loaded. Your current railway is safe.');
-    }
-  }
+    }, 1000);
+    return () => clearInterval(interval);
+  }, [ready]);
   useEffect(() => {
     const handle = (e: KeyboardEvent) => {
       if (
@@ -262,6 +317,7 @@ export default function Game() {
         document.querySelector('[role="dialog"]')
       )
         return;
+      if (e.altKey || e.ctrlKey || e.metaKey) return;
       if (e.code === 'Space') {
         e.preventDefault();
         pause();
@@ -471,6 +527,12 @@ export default function Game() {
           aria-label="Meridian Valley simulation"
         >
           <div ref={mount} className="world-canvas" />
+          {world.current?.contextLost && (
+            <div className="context-notice" role="alert">
+              Graphics interrupted · railway paused. Waiting for graphics
+              recovery. Saves and export remain available.
+            </div>
+          )}
           {!ready && !error && (
             <div className="world-loading">
               <TrainFront size={32} />
@@ -652,6 +714,76 @@ export default function Game() {
                     </DialogDescription>
                   </DialogHeader>
                   <div className="atmosphere-settings">
+                    <label className="setting-toggle">
+                      <input
+                        type="checkbox"
+                        checked={reducedMotion}
+                        onChange={(e) => {
+                          const value = e.target.checked;
+                          setReducedMotion(value);
+                          world.current?.setReducedMotion(value);
+                          try {
+                            localStorage.setItem(
+                              'steam-atlas-reduced-motion',
+                              String(value),
+                            );
+                          } catch {
+                            /* Session preference still works. */
+                          }
+                        }}
+                      />
+                      Reduce decorative motion
+                    </label>
+                    <p className="setting-note">
+                      Stops smoke, rain/snow animation, carriage sway and
+                      animated camera transitions. Train movement and weather
+                      rules continue.
+                    </p>
+                    <details>
+                      <summary>Performance report</summary>
+                      <p className="setting-note">
+                        Recent frame intervals include display scheduling. CPU
+                        time measures simulation and render submission, not GPU
+                        execution.
+                      </p>
+                      <pre className="performance-report">
+                        {JSON.stringify(world.current?.diagnostics, null, 2)}
+                      </pre>
+                      <div className="save-row-actions">
+                        <button
+                          className="button"
+                          onClick={() => world.current?.metrics.reset()}
+                        >
+                          Start fresh sample
+                        </button>
+                        <button
+                          className="button"
+                          onClick={() =>
+                            downloadFile(
+                              JSON.stringify(
+                                {
+                                  date: new Date().toISOString(),
+                                  browser: navigator.userAgent,
+                                  viewport: [
+                                    window.innerWidth,
+                                    window.innerHeight,
+                                  ],
+                                  pixelRatio: window.devicePixelRatio,
+                                  simulationSeconds: sim.current.elapsed,
+                                  trains: sim.current.trains.length,
+                                  diagnostics: world.current?.diagnostics,
+                                },
+                                null,
+                                2,
+                              ),
+                              'steam-atlas-performance.json',
+                            )
+                          }
+                        >
+                          Export report
+                        </button>
+                      </div>
+                    </details>
                     <div className="setting-heading">
                       <strong>Time of day</strong>
                       <output>
@@ -1198,15 +1330,20 @@ export default function Game() {
           </div>
         </div>
         <div className="save-actions">
-          <span>Local saves</span>
-          <button className="button" onClick={save}>
-            <Save size={13} />
-            <span>Save</span>
-          </button>
-          <button className="button" onClick={load}>
-            Load
-          </button>
-          <Dialog open={resetOpen} onOpenChange={setResetOpen}>
+          <SaveOffice
+            simulation={sim.current}
+            restore={restored}
+            notify={setNotice}
+          />
+          <Dialog
+            open={resetOpen}
+            onOpenChange={(value) => {
+              if (!resetBusy) {
+                setResetOpen(value);
+                setResetRecovery(true);
+              }
+            }}
+          >
             <DialogTrigger className="button" aria-label="Start a new railway">
               <RotateCcw size={13} />
             </DialogTrigger>
@@ -1214,8 +1351,9 @@ export default function Game() {
               <DialogHeader>
                 <DialogTitle>Start a new railway?</DialogTitle>
                 <DialogDescription>
-                  This resets the current simulation. Your last local save will
-                  remain available through Load.
+                  This resets the current simulation. Your manual saves remain
+                  available in Saves, and a recovery copy of this railway is
+                  kept.
                 </DialogDescription>
               </DialogHeader>
               <label htmlFor="new-session-mode">Railway mode</label>
@@ -1243,13 +1381,52 @@ export default function Game() {
                     ? 'All twelve engines, $425,000 and customizable regional rules.'
                     : SCENARIOS[sessionMode].goal}
               </p>
+              <label className="setting-toggle">
+                <input
+                  type="checkbox"
+                  checked={resetRecovery}
+                  disabled={resetBusy}
+                  onChange={(e) => setResetRecovery(e.target.checked)}
+                />
+                Keep a recovery copy of this railway
+              </label>
+              {!resetRecovery && (
+                <p>
+                  Unsaved progress will be replaced. Use Saves → Export current
+                  railway first to keep it.
+                </p>
+              )}
               <div className="reset-actions">
-                <button className="button" onClick={() => setResetOpen(false)}>
+                <button
+                  className="button"
+                  disabled={resetBusy}
+                  onClick={() => setResetOpen(false)}
+                >
                   Keep playing
                 </button>
                 <button
                   className="button primary"
-                  onClick={() => {
+                  disabled={resetBusy}
+                  onClick={async () => {
+                    setResetBusy(true);
+                    const wasPaused = sim.current.paused;
+                    sim.current.paused = true;
+                    try {
+                      if (resetRecovery)
+                        await browserSaveStore().write(
+                          'recovery',
+                          sim.current.save(),
+                          'Before last load / new railway',
+                        );
+                    } catch {
+                      sim.current.paused = wasPaused;
+                      setResetBusy(false);
+                      setNotice(
+                        'Could not make a recovery copy. Export in Saves, then turn off recovery to start a new railway.',
+                      );
+                      return;
+                    }
+                    autosaveClock.current = 0;
                     setEditorOpen(false);
                     setDispatcherOpen(false);
                     setFleetOpen(false);
@@ -1265,6 +1442,7 @@ export default function Game() {
                     setSpeed(1);
                     overview();
                     setResetOpen(false);
+                    setResetBusy(false);
                     setNotice('A new operating day begins.');
                   }}
                 >
@@ -1276,7 +1454,7 @@ export default function Game() {
         </div>
       </footer>
       {notice && (
-        <output className="notification">
+        <output className="notification" aria-live="polite">
           <Check size={16} />
           {notice}
         </output>

@@ -1,4 +1,5 @@
 'use client';
+import { useOfficeFocus } from '@/hooks/use-office-focus';
 /* eslint-disable react/react-compiler -- Samples the authoritative mutable simulation. */
 import { useMemo, useState } from 'react';
 import { X } from 'lucide-react';
@@ -32,6 +33,7 @@ export function Dispatcher({
   close: () => void;
   changed: () => void;
 }) {
+  const office = useOfficeFocus(close);
   const [settings, setSettings] = useState<DispatchSettings>(() =>
     structuredClone(sim.settings(selected)),
   );
@@ -84,6 +86,7 @@ export function Dispatcher({
   }
   return (
     <section
+      ref={office}
       className="network-editor dispatcher"
       aria-label="Railway dispatcher"
     >

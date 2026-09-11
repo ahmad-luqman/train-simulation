@@ -1,3 +1,4 @@
+import { FrameMetrics } from './performance';
 import { conditions } from './region';
 import { RegionWeather } from './region-weather';
 import { ENGINES } from './fleet';
@@ -67,6 +68,11 @@ export class RailwayWorld {
   effects: SteamEffects;
   quality: Quality = 'balanced';
   photoMode = false;
+  reducedMotion = false;
+  contextLost = false;
+  onContextChange?: (lost: boolean) => void;
+  onCameraManual?: () => void;
+  metrics = new FrameMetrics();
   trackside = false;
   assetStatus: 'loading' | 'ready' | 'fallback' = 'loading';
   private showcase?: { engines: THREE.Object3D[]; tenders: THREE.Object3D[] };
@@ -94,6 +100,8 @@ export class RailwayWorld {
   private raycaster = new THREE.Raycaster();
   private pointer = new THREE.Vector2();
   private down = { x: 0, y: 0 };
+  private pointers = new Set<number>();
+  private multiTouch = false;
   private onSelect: (id: number) => void;
   private selectionRing: THREE.Mesh;
   private water: THREE.Mesh;
@@ -121,9 +129,19 @@ export class RailwayWorld {
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
     this.renderer.toneMappingExposure = 1.25;
     host.appendChild(this.renderer.domElement);
+    this.renderer.domElement.tabIndex = 0;
+    this.renderer.domElement.addEventListener(
+      'webglcontextlost',
+      this.contextLostHandler,
+    );
+    this.renderer.domElement.addEventListener(
+      'webglcontextrestored',
+      this.contextRestoredHandler,
+    );
+    this.renderer.domElement.addEventListener('keydown', this.mapKeyDown);
     this.renderer.domElement.setAttribute(
       'aria-label',
-      'Interactive 3D railway map. Drag to move the camera, scroll to zoom, or click a train to select it.',
+      'Interactive railway map. Arrow keys pan; plus and minus zoom. Drag to move, pinch to zoom, or select a train from Fleet.',
     );
     this.scene.background = new THREE.Color('#cbd5d4');
     this.scene.fog = new THREE.Fog('#cbd5d4', 250, 540);
@@ -163,7 +181,7 @@ export class RailwayWorld {
       this.scene,
       new Set([
         this.water,
-        ...this.signalLights.map((s) => s.mesh),
+        ...this.signalLights.flatMap((s) => [s.mesh, ...s.mesh.children]),
         ...this.dynamicMeshes(),
       ]),
     );
@@ -229,11 +247,14 @@ export class RailwayWorld {
     document.addEventListener('visibilitychange', this.visibilityChanged);
     host.addEventListener('pointerdown', this.pointerDown);
     host.addEventListener('pointerup', this.pointerUp);
+    host.addEventListener('pointercancel', this.pointerCancel);
     this.frame = requestAnimationFrame(this.animate);
   }
   private makeControls() {
     const c = new OrbitControls(this.camera, this.renderer.domElement);
-    c.enableDamping = true;
+    c.enableDamping = !this.reducedMotion;
+    c.touches.ONE = this.mode === 'iso' ? THREE.TOUCH.PAN : THREE.TOUCH.ROTATE;
+    c.touches.TWO = THREE.TOUCH.DOLLY_PAN;
     c.dampingFactor = 0.08;
     c.minDistance = 10;
     c.maxDistance = 1000;
@@ -480,7 +501,7 @@ export class RailwayWorld {
           before.add(o.geometry);
       });
       const moving = new Set<THREE.Object3D>(
-        this.signalLights.map((s) => s.mesh),
+        this.signalLights.flatMap((s) => [s.mesh, ...s.mesh.children]),
       );
       this.growthBuildings.forEach(({ group: buildings }) =>
         buildings.traverse((o) => moving.add(o)),
@@ -670,6 +691,13 @@ export class RailwayWorld {
           new THREE.MeshBasicMaterial({ color: '#79a867' }),
         );
         lamp.position.set(p.x, p.y + 2.3, p.z);
+        const arm = new THREE.Mesh(
+          new THREE.BoxGeometry(1.1, 0.16, 0.12),
+          new THREE.MeshBasicMaterial({ color: '#f5edd3' }),
+        );
+        arm.position.set(0, 0.5, 0);
+        lamp.add(arm);
+        lamp.userData.semaphore = arm;
         this.railGroup.add(lamp);
         this.signalLights.push({ key: edge.id, reverse: t > 0.5, mesh: lamp });
       }
@@ -1052,6 +1080,12 @@ export class RailwayWorld {
   private animate = (now: number) => {
     if (this.disposed) return;
     this.frame = requestAnimationFrame(this.animate);
+    if (document.hidden || this.contextLost) {
+      this.previous = 0;
+      return;
+    }
+    const started = performance.now();
+    const interval = this.previous ? now - this.previous : 0;
     const delta = this.previous
       ? Math.min((now - this.previous) / 1000, 0.1)
       : 0.016;
@@ -1062,13 +1096,17 @@ export class RailwayWorld {
     if (!this.photoMode && !document.hidden) this.sim.step(delta);
     if (this.networkRevision !== this.sim.revision) this.rebuildNetwork();
     const sky = conditions(this.sim);
-    const day = this.atmosphere.update(motionDelta, sky.weather);
+    const day = this.atmosphere.update(
+      this.reducedMotion ? 0 : motionDelta,
+      sky.weather,
+    );
     this.regionalWeather.update(
       sky,
-      this.sim.elapsed,
+      this.reducedMotion ? 0 : this.sim.elapsed,
       this.controls.target,
       this.quality === 'low',
     );
+    this.regionalWeather.group.visible = !this.reducedMotion;
     for (const building of this.growthBuildings)
       building.group.visible =
         (this.sim.region.towns.find((t) => t.node === building.node)?.level ??
@@ -1116,14 +1154,14 @@ export class RailwayWorld {
         );
         car.position.copy(at.p);
         car.rotation.set(at.pitch, at.angle, 0, 'YXZ');
-        if (running) {
+        if (running && !this.reducedMotion) {
           car.rotation.z = Math.sin(train.distance * 2 + j * 0.8) * 0.008;
           car.position.y += Math.sin(train.distance * 4 + j) * 0.009;
         }
         for (const wheel of (car.userData.wheels ?? []) as THREE.Object3D[])
           wheel.rotation.x = -phase;
       });
-      if (!frozen) {
+      if (!frozen && !this.reducedMotion) {
         const effort = THREE.MathUtils.clamp(0.45 + train.cars * 0.07, 0, 1);
         this.emission[i] += motionDelta;
         if (running && this.emission[i] > 0.26 / effort) {
@@ -1143,6 +1181,7 @@ export class RailwayWorld {
         this.previousRunning[i] = running;
       }
     });
+    this.effects.mesh.visible = !this.reducedMotion;
     this.effects.update(motionDelta);
     const target = this.trains[this.selected].position;
     this.selectionRing.position.set(target.x, 0.55, target.z);
@@ -1158,7 +1197,10 @@ export class RailwayWorld {
       if (subject) {
         if (this.camera.position.distanceTo(subject) > 65)
           this.placeTrackside();
-        this.controls.target.lerp(subject, 1 - Math.exp(-delta * 4));
+        this.controls.target.lerp(
+          subject,
+          this.reducedMotion ? 1 : 1 - Math.exp(-delta * 4),
+        );
       }
     } else if (this.following) {
       this.followCamera.update(
@@ -1166,6 +1208,7 @@ export class RailwayWorld {
         this.controls.target,
         subject,
         delta,
+        this.reducedMotion,
       );
     }
     this.controls.update();
@@ -1186,12 +1229,15 @@ export class RailwayWorld {
       ) + 2.5,
     );
     this.updateShowcase();
-    for (const signal of this.signalLights)
+    for (const signal of this.signalLights) {
+      const clear = this.sim.traffic.signal(signal.key, signal.reverse);
       (signal.mesh.material as THREE.MeshBasicMaterial).color.set(
-        this.sim.traffic.signal(signal.key, signal.reverse)
-          ? '#9be987'
-          : '#ff725a',
+        clear ? '#9be987' : '#ff725a',
       );
+      // Vertical proceed / horizontal stop semaphore adds a shape cue to the lamp.
+      const arm = signal.mesh.userData.semaphore as THREE.Mesh;
+      if (arm) arm.rotation.z = clear ? Math.PI / 2 : 0;
+    }
     this.audio.update(
       this.camera,
       this.sim.trains.map((t, i) => ({
@@ -1237,9 +1283,14 @@ export class RailwayWorld {
       if (visible) occupied.push({ x, y });
       label.element.style.transform = `translate(-50%, -100%) translate(${x}px,${y}px)`;
     }
+    if (interval) this.metrics.record(interval, performance.now() - started);
   };
   get diagnostics() {
     return {
+      ...this.metrics.snapshot(),
+      viewport: [this.host.clientWidth, this.host.clientHeight],
+      camera: this.mode,
+      contextLost: this.contextLost,
       fps: Math.round(this.fps),
       calls: this.renderer.info.render.calls,
       triangles: this.renderer.info.render.triangles,
@@ -1421,14 +1472,81 @@ export class RailwayWorld {
     }
     this.camera.updateProjectionMatrix();
   }
+  setReducedMotion(value: boolean) {
+    this.reducedMotion = value;
+    document.documentElement.dataset.reducedMotion = String(value);
+    this.controls.enableDamping = !value;
+  }
+  private contextLostHandler = (event: Event) => {
+    event.preventDefault();
+    this.contextLost = true;
+    this.sim.paused = true;
+    this.previous = 0;
+    this.audio.silence();
+    this.onContextChange?.(true);
+  };
+  private contextRestoredHandler = () => {
+    this.sim.paused = true;
+    this.contextLost = false;
+    this.previous = 0;
+    this.metrics.reset();
+    this.setQuality(this.quality);
+    this.onContextChange?.(false);
+  };
+  private mapKeyDown = (event: KeyboardEvent) => {
+    if (event.altKey || event.ctrlKey || event.metaKey) return;
+    if (event.key === '+' || event.key === '=' || event.key === '-') {
+      event.preventDefault();
+      this.zoom(event.key === '-' ? -1 : 1);
+      return;
+    }
+    const axes: Record<string, [number, number]> = {
+      ArrowLeft: [-1, 0],
+      ArrowRight: [1, 0],
+      ArrowUp: [0, 1],
+      ArrowDown: [0, -1],
+    };
+    const axis = axes[event.key];
+    if (!axis) return;
+    event.preventDefault();
+    // User movement takes control of framing, just like dragging the map.
+    this.following = false;
+    this.trackside = false;
+    this.onCameraManual?.();
+    const forward = this.controls.target
+      .clone()
+      .sub(this.camera.position)
+      .setY(0)
+      .normalize();
+    const right = forward.clone().cross(new THREE.Vector3(0, 1, 0));
+    const scale =
+      this.camera instanceof THREE.OrthographicCamera
+        ? (this.camera.top / this.camera.zoom) * 0.08
+        : this.camera.position.distanceTo(this.controls.target) * 0.06;
+    const movement = right
+      .multiplyScalar(axis[0] * scale)
+      .add(forward.multiplyScalar(axis[1] * scale));
+    this.camera.position.add(movement);
+    this.controls.target.add(movement);
+    this.controls.update();
+  };
   private visibilityChanged = () => {
     this.previous = 0;
     if (document.hidden) this.audio.silence();
   };
   private pointerDown = (e: PointerEvent) => {
+    if (this.pointers.size === 0) this.multiTouch = false;
+    this.pointers.add(e.pointerId);
+    if (this.pointers.size > 1) this.multiTouch = true;
     this.down = { x: e.clientX, y: e.clientY };
   };
+  private pointerCancel = (e: PointerEvent) => {
+    this.pointers.delete(e.pointerId);
+    this.multiTouch = true;
+  };
   private pointerUp = (e: PointerEvent) => {
+    this.pointers.delete(e.pointerId);
+    if (this.multiTouch || e.button !== 0) return;
     if (Math.hypot(e.clientX - this.down.x, e.clientY - this.down.y) > 5)
       return;
     const r = this.host.getBoundingClientRect();
@@ -1466,6 +1584,7 @@ export class RailwayWorld {
     document.removeEventListener('visibilitychange', this.visibilityChanged);
     this.host.removeEventListener('pointerdown', this.pointerDown);
     this.host.removeEventListener('pointerup', this.pointerUp);
+    this.host.removeEventListener('pointercancel', this.pointerCancel);
     this.labels.forEach((l) => l.element.remove());
     this.audio.dispose();
     this.rememberResources(this.scene);
@@ -1474,6 +1593,15 @@ export class RailwayWorld {
     this.resources.clear();
     this.materials.clear();
     this.sunlight.shadow.map?.dispose();
+    this.renderer.domElement.removeEventListener(
+      'webglcontextlost',
+      this.contextLostHandler,
+    );
+    this.renderer.domElement.removeEventListener(
+      'webglcontextrestored',
+      this.contextRestoredHandler,
+    );
+    this.renderer.domElement.removeEventListener('keydown', this.mapKeyDown);
     this.renderer.dispose();
     this.renderer.domElement.remove();
   }

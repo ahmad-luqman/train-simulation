@@ -1,4 +1,5 @@
 'use client';
+import { useOfficeFocus } from '@/hooks/use-office-focus';
 /* eslint-disable react/react-compiler -- This panel samples the imperative simulation, like the game shell. */
 import {
   useCallback,
@@ -60,6 +61,7 @@ export function NetworkEditor({
   changed,
 }: Props) {
   'use no memo';
+  const office = useOfficeFocus(close);
   const [tab, setTab] = useState('build'),
     [start, setStart] = useState(3),
     [end, setEnd] = useState<Construction['end']>({
@@ -199,6 +201,7 @@ export function NetworkEditor({
   const totalSpend = sim.construction.reduce((sum, r) => sum + r.amount, 0);
   return (
     <aside
+      ref={office}
       className="network-editor"
       aria-label="Railway construction and services"
     >

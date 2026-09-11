@@ -112,3 +112,21 @@ void test('follow zoom is smooth, framing is independent of frame rate, and movi
   }
   assert.ok(results[0].distanceTo(results[2]) < 1e-8);
 });
+void test('reduced motion acquires a visible subject immediately and preserves queued framing', () => {
+  for (const iso of [true, false]) {
+    const c = camera(iso),
+      focus = new Vector3(),
+      follow = new FollowCamera();
+    const initial = c.position.clone();
+    follow.update(c, focus, null, 1 / 60, true);
+    assert.deepEqual(c.position, initial);
+    const subject = new Vector3(90, 3, -120);
+    follow.update(c, focus, subject, 1 / 60, true);
+    assert.deepEqual(focus, subject);
+    c.lookAt(focus);
+    c.updateMatrixWorld();
+    const screen = subject.clone().project(c);
+    assert.ok(Math.abs(screen.x) < 0.01 && Math.abs(screen.y) < 0.01);
+    if (c instanceof OrthographicCamera) assert.equal(c.zoom, c.top / 17.2);
+  }
+});

@@ -16,7 +16,8 @@
     "benchmark:dispatch": "tsx scripts/benchmark-dispatch.ts",
     "benchmark:economy": "tsx scripts/benchmark-economy.ts",
     "benchmark:fleet": "tsx scripts/benchmark-fleet.ts",
-    "benchmark:region": "tsx scripts/benchmark-region.ts"
+    "benchmark:region": "tsx scripts/benchmark-region.ts",
+    "benchmark:release": "tsx scripts/benchmark-release.ts"
   },
   "dependencies": {
     "@base-ui/react": "1.7.0",
