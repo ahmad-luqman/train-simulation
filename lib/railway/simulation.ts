@@ -1,4 +1,15 @@
 import {
+  createRegion,
+  initializeSession,
+  tickRegion,
+  validateRegion,
+  recordAction,
+  recordIntervention,
+  requireResearch,
+  type RegionState,
+  type SessionMode,
+} from './region';
+import {
   createFleet,
   tickFleet,
   validateFleet,
@@ -71,7 +82,8 @@ export type ConstructionRecord = {
   used?: boolean;
 };
 export type SaveState = {
-  version: 7;
+  version: 8;
+  region: RegionState;
   fleet: FleetState;
   economy: EconomyState;
   dispatch: DispatchState;
@@ -122,7 +134,8 @@ export class Simulation {
     locomotives.length,
   );
   fleet = createFleet(this);
-  constructor() {
+  region = createRegion(this);
+  constructor(mode: SessionMode = 'sandbox', seed = 1885) {
     this.economy.ledger.push({
       id: 1,
       at: 0,
@@ -132,6 +145,8 @@ export class Simulation {
       debt: 0,
       note: 'Opening capital',
     });
+    this.region = createRegion(this, mode, seed);
+    initializeSession(this, mode);
   }
   canAfford(amount: number) {
     return this.economy.mode === 'unlimited' || this.treasury >= amount;
@@ -178,6 +193,7 @@ export class Simulation {
       for (const t of order) this.moveTrain(t);
       this.traffic.recoverWaits();
       this.releaseCleared();
+      tickRegion(this);
     }
   }
   settings(id: number): DispatchSettings {
@@ -239,6 +255,7 @@ export class Simulation {
   configureDispatch(id: number, settings: DispatchSettings) {
     if (!this.trains[id]) throw new Error('Choose a train.');
     validateDispatch(this.network, settings);
+    recordIntervention(this, id);
     this.services[id].dispatch = structuredClone(settings);
     const t = this.trains[id];
     if (!t.motion.started) {
@@ -259,6 +276,7 @@ export class Simulation {
   }
   prioritize(id: number) {
     if (!this.trains[id]) throw new Error('Choose a train.');
+    recordIntervention(this, id);
     if (!this.dispatch.overrides.includes(id)) this.dispatch.overrides.push(id);
   }
   setDirection(id: string, direction: 'both' | 'a-to-b' | 'b-to-a') {
@@ -473,6 +491,7 @@ export class Simulation {
     }
     const schedule = structuredClone(service.dispatch ?? this.settings(t.id));
     this.services[t.id] = structuredClone(service);
+    recordAction(this, 'service');
     if (
       service.dispatch ||
       JSON.stringify(schedule) !== JSON.stringify(defaultDispatch(t.id))
@@ -629,6 +648,8 @@ export class Simulation {
       this.network.stations.push(q.station);
       this.network.nextPlatform++;
     }
+    recordIntervention(this);
+    recordAction(this, 'build');
     this.network.edges.push(q.edge);
     this.network.nextEdge++;
     pay(this, q.cost.total, 'construction', 'Track construction');
@@ -704,6 +725,7 @@ export class Simulation {
     return { errors, cost };
   }
   buildCrossover(parallel: string, position = 0.5) {
+    requireResearch(this, 'civil');
     const quote = this.quoteCrossover(parallel, position);
     if (quote.errors.length || !quote.cost)
       throw new Error(quote.errors.join(' '));
@@ -994,7 +1016,8 @@ export class Simulation {
   }
   save(): SaveState {
     return structuredClone({
-      version: 7,
+      version: 8,
+      region: this.region,
       fleet: this.fleet,
       economy: this.economy,
       dispatch: this.dispatch,
@@ -1011,7 +1034,7 @@ export class Simulation {
   restore(value: unknown) {
     // Validate a detached candidate; malformed saves cannot change the live world or treasury.
     const raw = value as SaveState;
-    if (!raw || ![1, 2, 3, 4, 5, 6, 7].includes(raw.version))
+    if (!raw || ![1, 2, 3, 4, 5, 6, 7, 8].includes(raw.version))
       throw new Error('This save version is not compatible.');
     if (raw.version < 5)
       throw new Error(
@@ -1248,8 +1271,12 @@ export class Simulation {
     } else candidate.economy = s.economy;
     candidate.fleet =
       Number(raw.version) < 7 ? createFleet(candidate) : s.fleet;
+    candidate.region =
+      Number(raw.version) < 8 ? createRegion(candidate) : s.region;
+    validateRegion(candidate);
     validateFleet(candidate);
     validateEconomy(candidate);
+    this.region = candidate.region;
     this.fleet = candidate.fleet;
     this.economy = candidate.economy;
     this.network = candidate.network;

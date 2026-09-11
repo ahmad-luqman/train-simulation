@@ -1,3 +1,4 @@
+import { townRate } from './region';
 import { fleetFactors, wagonCapacity } from './fleet';
 import type { Simulation, TrainState } from './simulation';
 
@@ -97,6 +98,7 @@ export type LedgerEntry = {
   cargo?: Cargo;
   quantity?: number;
   rejected?: number;
+  builtTrack?: boolean;
   source?: number;
   destination?: number;
   contract?: number;
@@ -270,6 +272,7 @@ export function journal(
       | 'cargo'
       | 'quantity'
       | 'rejected'
+      | 'builtTrack'
       | 'source'
       | 'destination'
       | 'contract'
@@ -293,7 +296,7 @@ export function journal(
 export function pay(
   sim: Simulation,
   amount: number,
-  category: 'construction' | 'wagon',
+  category: 'construction' | 'wagon' | 'maintenance',
   note: string,
   train?: number,
 ) {
@@ -337,12 +340,13 @@ export function tickEconomy(sim: Simulation) {
         });
     if (e.second % 5 === 0) {
       for (const town of e.towns) {
-        const amount = Math.min(2, STORAGE - town.stock.passengers);
+        const rate = townRate(sim, town.node);
+        const amount = Math.min(rate, STORAGE - town.stock.passengers);
         town.stock.passengers += amount;
         e.created.passengers += amount;
         for (const cargo of CARGO) {
           const consumed = Math.min(
-            2,
+            rate,
             cargo === 'passengers'
               ? town.received[cargo]
               : accepts(town.node, cargo) &&
@@ -513,6 +517,9 @@ export function unloadCargo(sim: Simulation, t: TrainState, node: number) {
       cargo: m.cargo,
       quantity: accepted,
       rejected,
+      builtTrack: t.motion.history.some((leg) =>
+        sim.network.edges.some((e) => e.id === leg.edge && e.built),
+      ),
       source: m.source,
       destination: node,
     },
@@ -572,6 +579,15 @@ export function acceptContract(sim: Simulation, offer: number) {
     penalty: o.penalty,
     status: 'active',
   });
+}
+export function setMoneyMode(sim: Simulation, mode: EconomyState['mode']) {
+  if (!['standard', 'unlimited'].includes(mode))
+    throw new Error('Choose a money mode.');
+  if (sim.region.mode !== 'sandbox' && mode === 'unlimited')
+    throw new Error(
+      'Unlimited funds are available in sandbox. Loans remain available here.',
+    );
+  sim.economy.mode = mode;
 }
 export function borrow(sim: Simulation) {
   if (sim.economy.debt + LOAN_STEP > LOAN_LIMIT)
@@ -736,6 +752,7 @@ export function validateEconomy(sim: Simulation) {
       l.at > sim.elapsed ||
       typeof l.note !== 'string' ||
       l.note.length > 500 ||
+      (l.builtTrack !== undefined && typeof l.builtTrack !== 'boolean') ||
       (l.train !== undefined && (!natural(l.train) || !sim.trains[l.train]))
     )
       fail();

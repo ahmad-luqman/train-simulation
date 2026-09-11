@@ -42,6 +42,14 @@ import {
   NativeSelectOption,
 } from '@/components/ui/native-select';
 import { locomotives, money } from '@/lib/railway/data';
+import { RegionOffice } from './region-office';
+import {
+  recordAction,
+  SCENARIOS,
+  TUTORIAL,
+  conditions,
+  type SessionMode,
+} from '@/lib/railway/region';
 import { FleetOffice } from './fleet-office';
 import { ENGINES } from '@/lib/railway/fleet';
 import { EconomyOffice } from './economy-office';
@@ -55,7 +63,8 @@ import type { RailwayWorld, CameraMode } from '@/lib/railway/world';
 import { makePortraits } from '@/lib/railway/portraits';
 import type { AudioMix } from '@/lib/railway/audio';
 import { registerRailwayTools } from '@/lib/railway/webmcp';
-const SAVE_KEY = 'steam-atlas-save-v7';
+const SAVE_KEY = 'steam-atlas-save-v8';
+const PHASE_5_SAVE_KEY = 'steam-atlas-save-v7';
 const PHASE_4_SAVE_KEY = 'steam-atlas-save-v6';
 const PHASE_3B_SAVE_KEY = 'steam-atlas-save-v5';
 const PHASE_3A_SAVE_KEY = 'steam-atlas-save-v4';
@@ -94,7 +103,13 @@ export default function Game() {
     [editorOpen, setEditorOpen] = useState(false),
     [dispatcherOpen, setDispatcherOpen] = useState(false),
     [economyOpen, setEconomyOpen] = useState(false),
-    [fleetOpen, setFleetOpen] = useState(false);
+    [fleetOpen, setFleetOpen] = useState(false),
+    [regionOpen, setRegionOpen] = useState(false),
+    [sessionMode, setSessionMode] = useState<SessionMode>('campaign');
+  function selectTrain(id: number) {
+    setSelected(id);
+    if (sim.current.fleet.units[id]?.owned) recordAction(sim.current, 'select');
+  }
   useEffect(() => {
     let active = true;
     let instance: RailwayWorld | undefined;
@@ -104,6 +119,8 @@ export default function Game() {
         try {
           instance = new RailwayWorld(mount.current, sim.current, (id) => {
             setSelected(id);
+            if (sim.current.fleet.units[id]?.owned)
+              recordAction(sim.current, 'select');
             setDetailsOpen(true);
           });
           world.current = instance;
@@ -132,6 +149,8 @@ export default function Game() {
       sim.current,
       (id) => {
         setSelected(id);
+        if (sim.current.fleet.units[id]?.owned)
+          recordAction(sim.current, 'select');
         setFollowing(true);
         world.current?.follow(id);
       },
@@ -209,6 +228,7 @@ export default function Game() {
     try {
       const data =
         localStorage.getItem(SAVE_KEY) ??
+        localStorage.getItem(PHASE_5_SAVE_KEY) ??
         localStorage.getItem(PHASE_4_SAVE_KEY) ??
         localStorage.getItem(PHASE_3B_SAVE_KEY) ??
         localStorage.getItem(PHASE_3A_SAVE_KEY) ??
@@ -223,6 +243,7 @@ export default function Game() {
       setEditorOpen(false);
       setDispatcherOpen(false);
       setFleetOpen(false);
+      setRegionOpen(false);
       setEconomyOpen(false);
       setTick((t) => t + 1);
       setNotice('Your railway has been restored.');
@@ -406,11 +427,11 @@ export default function Game() {
               const l = ENGINES[unit.engine];
               return (
                 <button
-                  key={l.name}
+                  key={i}
                   className={`train-row ${selected === i ? 'selected' : ''}`}
                   aria-pressed={selected === i}
                   onClick={() => {
-                    setSelected(i);
+                    selectTrain(i);
                     setRosterOpen(false);
                     setDetailsOpen(true);
                   }}
@@ -473,6 +494,29 @@ export default function Game() {
           <div className="map-title">
             <div className="eyebrow">Region 01 / Meridian Railway</div>
             <h1>Meridian Valley</h1>
+            {sim.current.region.mode !== 'sandbox' && (
+              <button
+                className="region-goal-link"
+                onClick={() => {
+                  setRegionOpen(true);
+                  setFleetOpen(false);
+                  setEconomyOpen(false);
+                  setEditorOpen(false);
+                  setDispatcherOpen(false);
+                }}
+              >
+                {sim.current.region.result
+                  ? sim.current.region.result.outcome === 'won'
+                    ? 'Goal achieved · view results'
+                    : 'Challenge ended · view results'
+                  : sim.current.region.mode === 'campaign'
+                    ? `Next: ${TUTORIAL.find((t) => !sim.current.region.tutorial.includes(t.id))?.title ?? 'Develop the valley'}`
+                    : SCENARIOS[
+                        sim.current.region.mode as keyof typeof SCENARIOS
+                      ].name}{' '}
+                · {conditions(sim.current).weather}
+              </button>
+            )}
             <div>
               {sim.current.network.stations.length} stations <span>·</span>{' '}
               {sim.current.network.edges.length} tracks <span>·</span> Est. 1885
@@ -482,9 +526,23 @@ export default function Game() {
             <div className="toolbar-row">
               <button
                 className="map-button"
+                aria-expanded={regionOpen}
+                onClick={() => {
+                  setRegionOpen(!regionOpen);
+                  setFleetOpen(false);
+                  setEconomyOpen(false);
+                  setEditorOpen(false);
+                  setDispatcherOpen(false);
+                }}
+              >
+                Region & goals
+              </button>
+              <button
+                className="map-button"
                 aria-expanded={editorOpen}
                 onClick={() => {
                   setFleetOpen(false);
+                  setRegionOpen(false);
                   setEconomyOpen(false);
                   setEditorOpen(!editorOpen);
                   setDispatcherOpen(false);
@@ -497,6 +555,7 @@ export default function Game() {
                 aria-expanded={dispatcherOpen}
                 onClick={() => {
                   setFleetOpen(false);
+                  setRegionOpen(false);
                   setEconomyOpen(false);
                   setDispatcherOpen(!dispatcherOpen);
                   setEditorOpen(false);
@@ -509,6 +568,7 @@ export default function Game() {
                 aria-expanded={economyOpen}
                 onClick={() => {
                   setFleetOpen(false);
+                  setRegionOpen(false);
                   setEconomyOpen(!economyOpen);
                   setEditorOpen(false);
                   setDispatcherOpen(false);
@@ -520,6 +580,7 @@ export default function Game() {
                 className="map-button"
                 aria-expanded={fleetOpen}
                 onClick={() => {
+                  setRegionOpen(false);
                   setFleetOpen(!fleetOpen);
                   setEconomyOpen(false);
                   setEditorOpen(false);
@@ -844,12 +905,27 @@ export default function Game() {
               <span className="minimap-title">NETWORK OVERVIEW</span>
             </button>
           </div>
+          {regionOpen && (
+            <RegionOffice
+              sim={sim.current}
+              close={() => setRegionOpen(false)}
+              changed={() => setTick((t) => t + 1)}
+              newSession={() => setResetOpen(true)}
+              navigate={(panel) => {
+                setRegionOpen(false);
+                setFleetOpen(panel === 'fleet');
+                setEconomyOpen(panel === 'economy');
+                setEditorOpen(panel === 'build');
+                setDispatcherOpen(panel === 'dispatch');
+              }}
+            />
+          )}
           {fleetOpen && (
             <FleetOffice
               key={selected}
               sim={sim.current}
               selected={selected}
-              select={setSelected}
+              select={selectTrain}
               close={() => setFleetOpen(false)}
               changed={() => setTick((t) => t + 1)}
             />
@@ -858,7 +934,7 @@ export default function Game() {
             <EconomyOffice
               sim={sim.current}
               selected={selected}
-              select={setSelected}
+              select={selectTrain}
               close={() => setEconomyOpen(false)}
               changed={() => setTick((t) => t + 1)}
             />
@@ -868,7 +944,7 @@ export default function Game() {
               key={selected}
               sim={sim.current}
               selected={selected}
-              select={setSelected}
+              select={selectTrain}
               close={() => setDispatcherOpen(false)}
               changed={() => setTick((t) => t + 1)}
             />
@@ -1142,6 +1218,31 @@ export default function Game() {
                   remain available through Load.
                 </DialogDescription>
               </DialogHeader>
+              <label htmlFor="new-session-mode">Railway mode</label>
+              <NativeSelect
+                id="new-session-mode"
+                value={sessionMode}
+                onChange={(e) => setSessionMode(e.target.value as SessionMode)}
+              >
+                <NativeSelectOption value="campaign">
+                  Guided campaign · two engines
+                </NativeSelectOption>
+                <NativeSelectOption value="sandbox">
+                  Sandbox · full collection
+                </NativeSelectOption>
+                {Object.entries(SCENARIOS).map(([id, scenario]) => (
+                  <NativeSelectOption key={id} value={id}>
+                    {scenario.name}
+                  </NativeSelectOption>
+                ))}
+              </NativeSelect>
+              <p>
+                {sessionMode === 'campaign'
+                  ? 'Start with $145,000 and two stationary freight services. Build, route and release them to support regional growth.'
+                  : sessionMode === 'sandbox'
+                    ? 'All twelve engines, $425,000 and customizable regional rules.'
+                    : SCENARIOS[sessionMode].goal}
+              </p>
               <div className="reset-actions">
                 <button className="button" onClick={() => setResetOpen(false)}>
                   Keep playing
@@ -1152,9 +1253,12 @@ export default function Game() {
                     setEditorOpen(false);
                     setDispatcherOpen(false);
                     setFleetOpen(false);
+                    setRegionOpen(false);
                     setEconomyOpen(false);
-                    const fresh = new Simulation();
+                    const fresh = new Simulation(sessionMode);
                     sim.current.restore(fresh.save());
+                    setSelected(fresh.fleet.units.findIndex((u) => u.owned));
+                    setRegionOpen(sessionMode !== 'sandbox');
                     sim.current.paused = false;
                     sim.current.speed = 1;
                     setPaused(false);

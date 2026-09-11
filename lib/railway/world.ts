@@ -1,3 +1,5 @@
+import { conditions } from './region';
+import { RegionWeather } from './region-weather';
 import { ENGINES } from './fleet';
 import { tunnelAt, bridgeAt } from './structures';
 import {
@@ -54,6 +56,13 @@ export class RailwayWorld {
   cars: THREE.Group[][] = [];
   labels: { element: HTMLDivElement; position: THREE.Vector3 }[] = [];
   atmosphere: Atmosphere;
+  private regionalWeather = new RegionWeather();
+  private growthBuildings: {
+    node: number;
+    level: number;
+    group: THREE.Group;
+  }[] = [];
+  private growthLabels: { node: number; element: HTMLElement }[] = [];
   audio = new RailwayAudio();
   effects: SteamEffects;
   quality: Quality = 'balanced';
@@ -133,6 +142,7 @@ export class RailwayWorld {
     sh.bias = -0.0002;
     this.scene.add(this.sunlight);
     this.atmosphere = new Atmosphere(this.scene, this.sunlight, this.renderer);
+    this.scene.add(this.regionalWeather.group);
     this.camera = new THREE.OrthographicCamera(-90, 90, 90, -90, 0.1, 1800);
     this.camera.position.set(140 * MAP_SCALE, 155 * MAP_SCALE, 175 * MAP_SCALE);
     this.controls = this.makeControls();
@@ -322,7 +332,11 @@ export class RailwayWorld {
     const keepGeometry = new Set<THREE.BufferGeometry>(),
       keepMaterial = new Set<THREE.Material>();
     const collect = (o: THREE.Object3D) => {
-      if (o instanceof THREE.Mesh || o instanceof THREE.Line) {
+      if (
+        o instanceof THREE.Mesh ||
+        o instanceof THREE.Line ||
+        o instanceof THREE.Points
+      ) {
         keepGeometry.add(o.geometry);
         (Array.isArray(o.material) ? o.material : [o.material]).forEach((m) =>
           keepMaterial.add(m),
@@ -335,7 +349,11 @@ export class RailwayWorld {
     this.showcase?.engines.forEach((o) => o.traverse(collect));
     this.showcase?.tenders.forEach((o) => o.traverse(collect));
     group.traverse((o) => {
-      if (o instanceof THREE.Mesh || o instanceof THREE.Line) {
+      if (
+        o instanceof THREE.Mesh ||
+        o instanceof THREE.Line ||
+        o instanceof THREE.Points
+      ) {
         if (!keepGeometry.has(o.geometry)) {
           o.geometry.dispose();
           this.resources.delete(o.geometry);
@@ -363,6 +381,8 @@ export class RailwayWorld {
     this.groundGeometry.computeBoundingSphere();
     this.releaseGroup(this.railGroup);
     this.releaseGroup(this.sceneryGroup);
+    this.growthBuildings = [];
+    this.growthLabels = [];
     this.curves.clear();
     this.clearancePoints.clear();
     this.signalLights = [];
@@ -414,8 +434,15 @@ export class RailwayWorld {
         title.textContent = station.name;
         const detail = document.createElement('span');
         detail.textContent = 'Station';
+        const growthLabel = document.createElement('span');
+        this.growthLabels.push({ node: station.node, element: growthLabel });
+        const urban = new THREE.Group();
+        urban.position.y = node.y - 0.12;
+        this.sceneryGroup.add(urban);
+        this.addTownGrowth(urban, station.node, node.x, node.z, '#ac775d');
         el.appendChild(title);
         el.appendChild(detail);
+        el.appendChild(growthLabel);
         this.host.appendChild(el);
         this.labels.push({
           element: el,
@@ -445,12 +472,26 @@ export class RailwayWorld {
     for (const group of [this.railGroup, this.sceneryGroup]) {
       const before = new Set<THREE.BufferGeometry>();
       group.traverse((o) => {
-        if (o instanceof THREE.Mesh || o instanceof THREE.Line)
+        if (
+          o instanceof THREE.Mesh ||
+          o instanceof THREE.Line ||
+          o instanceof THREE.Points
+        )
           before.add(o.geometry);
       });
-      batchScenery(group, new Set(this.signalLights.map((s) => s.mesh)));
+      const moving = new Set<THREE.Object3D>(
+        this.signalLights.map((s) => s.mesh),
+      );
+      this.growthBuildings.forEach(({ group: buildings }) =>
+        buildings.traverse((o) => moving.add(o)),
+      );
+      batchScenery(group, moving);
       group.traverse((o) => {
-        if (o instanceof THREE.Mesh || o instanceof THREE.Line)
+        if (
+          o instanceof THREE.Mesh ||
+          o instanceof THREE.Line ||
+          o instanceof THREE.Points
+        )
           before.delete(o.geometry);
       });
       // These two procedural geometries are shared globally by the existing kits.
@@ -668,6 +709,34 @@ export class RailwayWorld {
       this.railGroup.add(g);
     }
   }
+  private addTownGrowth(
+    urban: THREE.Group,
+    node: number,
+    x: number,
+    z: number,
+    color: string,
+  ) {
+    for (let level = 1; level <= 3; level++) {
+      const extension = new THREE.Group();
+      for (let col = 0; col < 4; col++) {
+        const hx = x - 10 + col * 3.4,
+          hz = z + 28 + level * 4;
+        if (
+          Math.abs(hx) < MAP.halfWidth - 3 &&
+          Math.abs(hz) < MAP.halfDepth - 3 &&
+          this.sceneryClear(hx, hz, 2)
+        )
+          house(extension, hx, hz, color, 0.8, 0);
+      }
+      // Merge each level locally before attaching it to an elevated town. Keep it
+      // outside global batching so its visibility still follows earned growth.
+      this.rememberResources(extension);
+      batchScenery(extension, new Set());
+      urban.add(extension);
+      this.growthBuildings.push({ node, level, group: extension });
+      extension.visible = false;
+    }
+  }
   private towns() {
     // A small glacial tarn occupies the natural basin beneath the high railway.
     const lake = new THREE.Mesh(
@@ -696,6 +765,7 @@ export class RailwayWorld {
         const s = 0.68 + random() * 0.4;
         house(urban, x, z, city.color, s, random() > 0.6 ? Math.PI : 0);
       }
+      this.addTownGrowth(urban, index, city.x, city.z, city.color);
       box(urban, '#b7b39a', city.x, 0, city.z + 4, 20, 0.07, 1.25);
       box(urban, '#b7b39a', city.x - 2, 0.01, city.z + 10, 1.2, 0.08, 13);
       industryKit(
@@ -706,6 +776,9 @@ export class RailwayWorld {
       const el = document.createElement('div');
       el.className = 'city-label';
       el.innerHTML = `<strong>${city.name}</strong><span>${city.cargo}${city.elevation ? ` · ${Math.round((city.elevation * 50) / 9)} m` : ''}</span>`;
+      const growthLabel = document.createElement('span');
+      el.appendChild(growthLabel);
+      this.growthLabels.push({ node: index, element: growthLabel });
       this.host.appendChild(el);
       this.labels.push({
         element: el,
@@ -899,7 +972,11 @@ export class RailwayWorld {
   }
   private rememberResources(root: THREE.Object3D) {
     root.traverse((o) => {
-      if (o instanceof THREE.Mesh || o instanceof THREE.Line) {
+      if (
+        o instanceof THREE.Mesh ||
+        o instanceof THREE.Line ||
+        o instanceof THREE.Points
+      ) {
         this.resources.add(o.geometry);
         (Array.isArray(o.material) ? o.material : [o.material]).forEach((m) =>
           this.materials.add(m),
@@ -984,7 +1061,27 @@ export class RailwayWorld {
     const motionDelta = frozen ? 0 : delta * this.sim.speed;
     if (!this.photoMode && !document.hidden) this.sim.step(delta);
     if (this.networkRevision !== this.sim.revision) this.rebuildNetwork();
-    const day = this.atmosphere.update(motionDelta);
+    const sky = conditions(this.sim);
+    const day = this.atmosphere.update(motionDelta, sky.weather);
+    this.regionalWeather.update(
+      sky,
+      this.sim.elapsed,
+      this.controls.target,
+      this.quality === 'low',
+    );
+    for (const building of this.growthBuildings)
+      building.group.visible =
+        (this.sim.region.towns.find((t) => t.node === building.node)?.level ??
+          0) >= building.level;
+    for (const label of this.growthLabels) {
+      const level =
+        this.sim.region.towns.find((t) => t.node === label.node)?.level ?? 0;
+      const text = level
+        ? `Level ${level} · ${800 + level * 240} residents`
+        : '';
+      if (label.element.textContent !== text) label.element.textContent = text;
+    }
+    this.water.position.y = sky.water;
     this.host.dataset.night = day < 0.25 ? 'true' : 'false';
     this.windowMaterials.forEach((m) => {
       m.emissiveIntensity = (1 - day) * 1.5;
@@ -993,6 +1090,8 @@ export class RailwayWorld {
     water.uniforms.time.value = this.atmosphere.time;
     water.uniforms.day.value = day;
     water.uniforms.fogColor.value.copy((this.scene.fog as THREE.Fog).color);
+    water.uniforms.fogNear.value = (this.scene.fog as THREE.Fog).near;
+    water.uniforms.fogFar.value = (this.scene.fog as THREE.Fog).far;
     this.sim.trains.forEach((train, i) => {
       this.syncCars(i);
       this.trains[i].visible = this.sim.visible(train);

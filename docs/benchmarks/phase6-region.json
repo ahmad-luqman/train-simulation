@@ -1,0 +1,185 @@
+{
+  "measuredAt": "2026-09-11T09:01:19.475Z",
+  "platform": "darwin arm64",
+  "cpu": "Apple M4 Max",
+  "sessions": [
+    {
+      "mode": "campaign",
+      "seed": 1885,
+      "simulatedSeconds": 3723.0000000047785,
+      "milliseconds": 4708.371,
+      "millisecondsPerTick": 0.06323356164383562,
+      "result": {
+        "outcome": "won",
+        "at": 3723.0000000047785,
+        "delivered": 546,
+        "profit": 30628,
+        "departures": 29,
+        "punctuality": 86.20689655172413,
+        "bottlenecks": [
+          [
+            "depot",
+            70
+          ],
+          [
+            "junction",
+            5
+          ]
+        ]
+      },
+      "research": [
+        "civil",
+        "freight"
+      ],
+      "tutorial": [
+        "select",
+        "build",
+        "service",
+        "delivery",
+        "invest",
+        "congestion"
+      ],
+      "towns": [
+        {
+          "node": 4,
+          "level": 3,
+          "supplied": 0,
+          "streak": 0,
+          "total": 294
+        },
+        {
+          "node": 7,
+          "level": 2,
+          "supplied": 0,
+          "streak": 1,
+          "total": 252
+        }
+      ],
+      "cash": 101924
+    },
+    {
+      "mode": "mountain",
+      "seed": 1885,
+      "simulatedSeconds": 2055.999999998714,
+      "milliseconds": 1221.5347499999998,
+      "millisecondsPerTick": 0.029706584387159528,
+      "result": {
+        "outcome": "won",
+        "at": 2055.999999998714,
+        "delivered": 126,
+        "profit": 2546,
+        "departures": 5,
+        "punctuality": 80,
+        "bottlenecks": [
+          [
+            "depot",
+            6
+          ]
+        ]
+      },
+      "research": [],
+      "tutorial": [
+        "delivery"
+      ],
+      "towns": [],
+      "cash": 222546
+    },
+    {
+      "mode": "junction",
+      "seed": 1885,
+      "simulatedSeconds": 1463.9999999992162,
+      "milliseconds": 1618.1203749999986,
+      "millisecondsPerTick": 0.055263674009562794,
+      "result": {
+        "outcome": "won",
+        "at": 1463.9999999992162,
+        "delivered": 210,
+        "profit": 8271,
+        "departures": 10,
+        "punctuality": 90,
+        "bottlenecks": [
+          [
+            "junction",
+            129
+          ],
+          [
+            "block",
+            128
+          ]
+        ]
+      },
+      "research": [],
+      "tutorial": [
+        "congestion",
+        "delivery"
+      ],
+      "towns": [
+        {
+          "node": 4,
+          "level": 1,
+          "supplied": 42,
+          "streak": 0,
+          "total": 210
+        }
+      ],
+      "cash": 228271
+    },
+    {
+      "mode": "river",
+      "seed": 1885,
+      "simulatedSeconds": 501.00000000007964,
+      "milliseconds": 307.92495899999994,
+      "millisecondsPerTick": 0.030731033832335324,
+      "result": {
+        "outcome": "won",
+        "at": 501.00000000007964,
+        "delivered": 84,
+        "profit": 2377,
+        "departures": 2,
+        "punctuality": 100,
+        "bottlenecks": []
+      },
+      "research": [],
+      "tutorial": [
+        "select",
+        "build",
+        "service",
+        "delivery"
+      ],
+      "towns": [],
+      "cash": 166673
+    },
+    {
+      "mode": "passenger",
+      "seed": 1885,
+      "simulatedSeconds": 1449.999999999229,
+      "milliseconds": 1396.1383749999986,
+      "millisecondsPerTick": 0.04814270258620685,
+      "result": {
+        "outcome": "won",
+        "at": 1449.999999999229,
+        "delivered": 420,
+        "profit": 14056,
+        "departures": 12,
+        "punctuality": 83.33333333333334,
+        "bottlenecks": [
+          [
+            "block",
+            204
+          ],
+          [
+            "junction",
+            97
+          ]
+        ]
+      },
+      "research": [],
+      "tutorial": [
+        "delivery"
+      ],
+      "towns": [],
+      "cash": 234056
+    }
+  ],
+  "scope": "Deterministic campaign and four scenario completions using real commands, reconciled economy/fleet/region. Physical separation is asserted per tick in tests. Browser/GPU acceptance is not measured here."
+}

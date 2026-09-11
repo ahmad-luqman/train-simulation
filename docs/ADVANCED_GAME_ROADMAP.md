@@ -2,7 +2,7 @@
 
 **Purpose:** Turn the current railway sandbox into a visually rich management game with meaningful construction, dispatch, economic, and fleet decisions.
 **Baseline:** Current repository at `315b7fb`, reviewed 9 September 2026.
-**Status:** Phases 1–3 and the corrective **Phase 3A implementation are delivered**, followed by the requested [expanded valley and locomotive-leading station redesign](EXPANDED_VALLEY.md). [Phase 3A safety notes](PHASE_3A_SAFETY.md) record the plan, physical topology, automated acceptance and measured headless performance. The [audit of `b1c2d05`](PHASE_3_COLLISION_AUDIT.md) remains preserved as regression evidence. All twelve services deliver in the 1,800-second run and continue through a second 1,800-second window. **Phase 4 runtime implementation is delivered:** finite inventories, three supply chains, compatible freight wagons, operating accounts, contracts, financing and version 6 saves. See [Phase 4 plan and evidence](PHASE_4_ECONOMY.md). The user explicitly requested Phase 4 implementation on 10 September 2026; browser/visual acceptance, independent review and the Phase 0 GPU baseline remain open and are not certified by the automated results. **Phase 5 runtime implementation is delivered**, including the expanded mountain railway. See [Phase 5 implementation and evidence](PHASE_5_FLEET.md). Phases 6–7 remain planned; browser/GPU and independent-review gates remain open.
+**Status:** Phases 1–3 and the corrective **Phase 3A implementation are delivered**, followed by the requested [expanded valley and locomotive-leading station redesign](EXPANDED_VALLEY.md). [Phase 3A safety notes](PHASE_3A_SAFETY.md) record the plan, physical topology, automated acceptance and measured headless performance. The [audit of `b1c2d05`](PHASE_3_COLLISION_AUDIT.md) remains preserved as regression evidence. All twelve services deliver in the 1,800-second run and continue through a second 1,800-second window. **Phase 4 runtime implementation is delivered:** finite inventories, three supply chains, compatible freight wagons, operating accounts, contracts, financing and version 6 saves. See [Phase 4 plan and evidence](PHASE_4_ECONOMY.md). The user explicitly requested Phase 4 implementation on 10 September 2026; browser/visual acceptance, independent review and the Phase 0 GPU baseline remain open and are not certified by the automated results. **Phase 5 runtime implementation is delivered**, including the expanded mountain railway. See [Phase 5 implementation and evidence](PHASE_5_FLEET.md). **Phase 6 runtime implementation is delivered:** guided campaign, real-action tutorial, milestone research, supply-led growth, deterministic weather/events, four scenarios, achievements, results and v8 saves. See [Phase 6 plan and verification](PHASE_6_REGION.md). Phase 7 remains planned; browser/GPU and independent-review gates remain open.
 
 ## Recommended direction
 
@@ -44,7 +44,7 @@ Effort is relative complexity, not a calendar commitment. Select test hardware a
 | 3A    | Physical collision safety and automatic safe routing    | Runtime delivered    | Initial Phase 3             | Large  |
 | 4     | Supply chains, contracts, and a real operating economy  | Runtime delivered    | 2 and Phase 3A              | Large  |
 | 5     | Distinct locomotives, maintenance, and depot logistics  | Runtime delivered    | 3 and 4                     | Large  |
-| 6     | Campaign progression and a world that responds          | Medium               | 1, 4, and 5                 | Large  |
+| 6     | Campaign progression and a world that responds          | Runtime delivered    | 1, 4, and 5                 | Large  |
 | 7     | Performance, usability, balancing, and release quality  | Required for release | All chosen release features | Large  |
 
 **Milestone A — Scenic railway:** Phases 0 and 1.
@@ -310,6 +310,8 @@ Treat three requirements separately: **collision detection** checks physical occ
 
 ## Phase 6 — Build progression and a living region
 
+**Runtime delivered:** See [implementation plan, operating rules and evidence](PHASE_6_REGION.md). All four challenges and the complete campaign pass deterministic playthroughs. Region effects remain optional in sandbox; versions 5–7 migrate to v8 without relocation. The campaign inherits the proven regional infrastructure and starts with two owned freight engines. Browser/visual acceptance and GPU measurement remain open.
+
 **Player benefit:** The railway changes the valley, and each session has clear goals and new decisions.
 
 ### Work
@@ -385,12 +387,14 @@ Move existing functionality gradually from `lib/railway/simulation.ts`, `lib/rai
 
 ## Next implementation backlog
 
-The corrective dispatch and Phase 4 runtime work are implemented. The remaining acceptance backlog is:
+The corrective dispatch and Phases 4–6 runtime work are implemented. The remaining acceptance backlog is:
 
 1. With explicit browser-testing authorization, record initial placement, the reproduced loop approach, busy junctions, terminal reversal and small-screen dispatcher interactions.
 2. Obtain an independent review of geometry, resource-release and persistence invariants; preserve the C1/C2/P1 fixtures and the simultaneous fleet tests.
 3. Record the Phase 0 browser/GPU hardware baseline and compare draw calls, frame cost and input responsiveness with the expanded physical station geometry. The headless dispatch measurements do not replace this.
 4. Playtest the Phase 4 office, contract flows, wagon silhouettes, small-screen controls and version 5 migration. Review balancing using the [mixed-fleet benchmark](benchmarks/phase4-economy.json); then playtest the Phase 5 fleet office, workshop transfers and mountain follow camera.
+
+5. Record the Phase 6 tutorial, research gates, campaign/scenario reset flow, forecasts, grown-town rendering and results at desktop and mobile sizes. The complete automated campaign and four scenario wins, plus 3,600 seconds of full-fleet region safety/progress, are recorded in [Phase 6 evidence](PHASE_6_REGION.md).
 
 The original 1,800-second all-twelve-services test is preserved alongside isolated tests, now using finite passenger queues on the original service routes. Its cash assertion includes all ledger entries because operating expenses are real. A separate default mixed-freight test requires each of the twelve services to make calls in both windows and every processor to receive cargo, with independent all-vehicle separation every tick. Sparse freight delivery opportunities are not used to weaken the original passenger delivery gate.
 

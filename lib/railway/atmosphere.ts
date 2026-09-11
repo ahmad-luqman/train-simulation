@@ -28,18 +28,23 @@ export class Atmosphere {
     scene.add(this.hemisphere, this.moon);
     this.moon.position.set(65, 85, -40);
   }
-  update(delta: number) {
+  update(delta: number, weather: 'clear' | 'fog' | 'rain' | 'snow' = 'clear') {
     this.time += delta;
     if (this.cycling) this.hour = (this.hour + delta / 30) % 24;
     const { day, sunset } = daylight(this.hour);
     const sky = new THREE.Color('#101e38')
       .lerp(new THREE.Color('#b8cfd5'), day)
       .lerp(new THREE.Color('#d5a18e'), sunset * 0.5);
+    if (weather !== 'clear')
+      sky.lerp(
+        new THREE.Color(weather === 'snow' ? '#ced8df' : '#7f979f'),
+        day * 0.35,
+      );
     (this.scene.background as THREE.Color).copy(sky);
     const fog = this.scene.fog as THREE.Fog;
     fog.color.copy(sky);
-    fog.near = 180 * MAP_SCALE;
-    fog.far = 440 * MAP_SCALE;
+    fog.near = (weather === 'fog' ? 100 : 180) * MAP_SCALE;
+    fog.far = (weather === 'fog' ? 320 : 440) * MAP_SCALE;
     this.sun.color.set('#fff2d3').lerp(new THREE.Color('#ffad6a'), sunset);
     this.sun.intensity = day * (2.8 - sunset * 0.8);
     const angle = ((this.hour - 6) / 24) * Math.PI * 2;

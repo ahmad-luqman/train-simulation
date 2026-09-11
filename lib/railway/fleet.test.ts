@@ -224,7 +224,7 @@ void test('version 6 fleet migration retains physical state and creates matching
   samePoses(poses(s, 0), poses(copy, 0));
   assert.deepEqual(copy.services, s.services);
   assert.equal(copy.treasury, s.treasury);
-  assert.equal(copy.save().version, 7);
+  assert.equal(copy.save().version, 8);
   assert.deepEqual(copy.fleet.units[6].consist, ['flat', 'flat', 'flat']);
 });
 void test('mountain expansion adds six stations, uphill/downhill routes, real covered tunnels and elevated viaducts', () => {

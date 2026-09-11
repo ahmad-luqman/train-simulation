@@ -1,6 +1,6 @@
 # Steam Atlas
 
-A playable, single-player railway sandbox built with Three.js, React, TypeScript, and Vinext. The interface and miniature landscape take their visual direction from the supplied railway reference.
+A playable, single-player railway management game with sandbox, campaign and challenge modes, built with Three.js, React, TypeScript, and Vinext. The interface and miniature landscape take their visual direction from the supplied railway reference.
 
 ## Run locally
 
@@ -18,6 +18,7 @@ npm test           # Railway simulation regression tests
 npm run benchmark:dispatch # Reproducible headless fleet/disruption timings
 npm run benchmark:economy  # Mixed-fleet economy, contracts and account totals
 npm run benchmark:fleet    # Mountain circuit, servicing and fleet accounts
+npm run benchmark:region   # Campaign and all four scenario completions
 npm run typecheck  # TypeScript
 npm run lint       # App code; generated component catalog is excluded
 npm run build      # Production Cloudflare Worker + client bundle
@@ -25,6 +26,10 @@ npm start          # Preview the production Worker locally
 ```
 
 ## Play
+
+- **Region & goals** opens the guided campaign, six-step tutorial, milestone research, town development, weather/event forecasts, achievements and results. Choose **New campaign, sandbox or challenge** for the two-engine campaign or mountain freight, junction relief, river expansion and passenger punctuality challenges. Sandbox keeps the full collection and independent switches for regional rules.
+- Campaign starts with $145,000, a Millbrook grain shuttle and a Grand Junction–Riverside provisions shuttle. Build the negative-side parallel line from Grand Junction to Riverside; set it to **Both directions** in Dispatcher, assign it to the provisions service and release both trains. Grain is processed into flour for the downstream town. **Region & goals** explains each next action and research requirement.
+- Repeated accepted supplies grow towns: 24 units in each of two consecutive ten-minute windows adds a level, up to three. Watch for announced bridge inspections and town festivals. Weather reduces maximum speed by at most 15%; inspections let authorized trains clear before holding new admissions. Research unlocks advanced engine classes, crossovers and workshops in campaign.
 
 - Select a steam locomotive from the twelve service slots or click its model. **Fleet & depots** compares and replaces engines, sells an empty engine, and purchases an engine for a vacant slot. The service and wagons remain assigned.
 - Choose **3D** for orbit controls or **Iso** for an orthographic view.
@@ -76,7 +81,9 @@ The Alpine Monarch showcase locomotive and tender use three embedded-material GL
 - `components/railway/fleet-office.tsx`: locomotive comparison, purchase/sale, servicing, workshops and consist editor.
 - `lib/railway/structures.ts`: shared tunnel and bridge classification.
 - `lib/railway/network.ts`, `terrain.ts`: stable network records, shared sampled geometry, costs, clearance and route planning.
-- `lib/railway/simulation.ts`: fixed ticks, construction commands, services, resource ownership, undo and validated version 7 saves.
+- `lib/railway/region.ts`: campaign, tutorial evidence, research, growth, deterministic forecasts, scenarios and results.
+- `lib/railway/region-weather.ts`: bounded rain/snow effects that follow simulation time.
+- `lib/railway/simulation.ts`: fixed ticks, construction commands, services, resource ownership, undo and validated version 8 saves.
 - `lib/railway/economy.ts`: finite stock, production/processing/consumption, manifests, tariffs, costs, contracts, debt and journal validation.
 - `components/railway/economy-office.tsx`: supply/demand map, wagon configuration, service accounts, contracts and finance controls.
 - `lib/railway/map.ts`: shared world, construction and camera extents.
@@ -105,7 +112,9 @@ The corrective [Phase 3A implementation](docs/PHASE_3A_SAFETY.md) addresses the 
 A [Safari visual review](docs/EXPANDED_VALLEY.md) checked the overview and improved both track-plan panels. Sustained train/camera interaction, full WebGL visual acceptance, accessibility and the Phase 0 GPU baseline remain open. Headless tests and timings do not certify those checks.
 Optional WebMCP tools (`get_railway_state`, `follow_train`, `set_train_hold`) are registered only when `document.modelContext` is available. No supported browser validation context was available during this implementation, so these experimental integrations have not been verified end to end. Unsupported browsers run the normal interface unchanged.
 
-Version 7 saves add engine ownership, specifications, ordered consists, condition, fuel/water, upgrades, workshops, active jobs and suspended services during depot transfers. Version 6 migrates fleet defaults without changing geometry, cargo, cash or authority; version 5 also receives its established economy migration. Older saves retain their own network: start a new railway to use the mountain expansion. Version 6 introduced inventories, manifests, wagon families, production counters, contracts, debt and an auditable ledger. Load searches v7, then the preserved v6, then the preserved v5/v4/v3/v2/v1 slots. Version 5 migrates with the same vehicle positions, cash and historic train totals; its generated load percentages are cleared because historic cargo had no inventory provenance. The first real manifest loads on a subsequent departure. Versions 1–4 use incompatible layouts and are rejected atomically with an explanation; no trains are silently relocated or stretched onto the larger map. Start a new railway to use this layout. New railway preserves every saved slot. Current saves restore only after detached geometry, ownership, braking and service-order validation.
+Version 8 adds deterministic region state, research, growth, tutorial actions, events and scenario results; versions 5–7 migrate with regional effects disabled in sandbox. Regional counters reconcile with delivery evidence in the ledger. Version 7 saves added engine ownership, specifications, ordered consists, condition, fuel/water, upgrades, workshops, active jobs and suspended services during depot transfers. Version 6 migrates fleet defaults without changing geometry, cargo, cash or authority; version 5 also receives its established economy migration. Older saves retain their own network: start a new railway to use the mountain expansion. Version 6 introduced inventories, manifests, wagon families, production counters, contracts, debt and an auditable ledger. Load searches v8, then the preserved v7/v6, then the preserved v5/v4/v3/v2/v1 slots. Version 5 migrates with the same vehicle positions, cash and historic train totals; its generated load percentages are cleared because historic cargo had no inventory provenance. The first real manifest loads on a subsequent departure. Versions 1–4 use incompatible layouts and are rejected atomically with an explanation; no trains are silently relocated or stretched onto the larger map. Start a new railway to use this layout. New railway preserves every saved slot. Current saves restore only after detached geometry, ownership, braking and service-order validation.
+
+See [Phase 6 campaign and living-region implementation](docs/PHASE_6_REGION.md) for rules, all five playable-session completions, 105 passing tests and the remaining browser/GPU acceptance gap.
 
 See [Phase 5 fleet and mountain implementation](docs/PHASE_5_FLEET.md) for operating rules, automated evidence and the remaining browser/GPU acceptance gap.
 

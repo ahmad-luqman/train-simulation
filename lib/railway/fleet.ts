@@ -1,3 +1,4 @@
+import { engineResearch, requireResearch } from './region';
 import { planService, type Service } from './network';
 import { locomotives } from './data';
 import { journal, pay, WAGONS, type Wagon, type Cargo } from './economy';
@@ -180,6 +181,8 @@ export function replaceEngine(sim: Simulation, id: number, engine: number) {
   const { u, t } = stationary(sim, id);
   if (!Number.isInteger(engine) || !ENGINES[engine])
     throw new Error('Choose a locomotive.');
+  const research = engineResearch(engine);
+  if (research) requireResearch(sim, research);
   const price = ENGINES[engine].price,
     credit = resale(sim, id);
   if (!sim.canAfford(Math.max(0, price - credit)))
@@ -268,6 +271,7 @@ export function upgradeEngine(
   sim.revision++;
 }
 export function buildDepot(sim: Simulation, node: number) {
+  requireResearch(sim, 'civil');
   if (!sim.network.stations.some((s) => s.node === node))
     throw new Error('Choose a station.');
   if (sim.fleet.depots.includes(node))

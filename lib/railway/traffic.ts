@@ -1,3 +1,4 @@
+import { conditions, inspectionBlocks } from './region';
 import { loadCargo, unloadCargo } from './economy';
 import { locomotives } from './data';
 import {
@@ -448,6 +449,17 @@ export class Traffic {
                 ? []
                 : (this.sim.network.crossovers ?? []).map((c) => c.id)),
             ]) {
+          if (
+            inspectionBlocks(
+              this.sim,
+              legs.map((l) => l.edge),
+            )
+          ) {
+            blockedKind = 'block';
+            detail =
+              'Bridge inspection: wait for reopening, defer before it starts, or assign an alternate route.';
+            continue;
+          }
           const sections = crossover
             ? this.topology.crossoverRoute(
                 p.berth,
@@ -725,7 +737,7 @@ export class Traffic {
           : e.a,
         this.sim.fleet.units[t.id],
       );
-    let curveLimit = physics.limit,
+    let curveLimit = physics.limit * conditions(this.sim).speed,
       base = 0;
     for (const part of route.sections) {
       const section = this.topology.sections.get(part.section)!;

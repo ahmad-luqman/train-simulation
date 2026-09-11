@@ -2285,3 +2285,104 @@ p {
   width: 100%;
   accent-color: #3b7761;
 }
+
+/* Regional office extends the existing railway management panels. */
+.region-office {
+  font-size: 0.875rem;
+}
+.region-office h3 {
+  font-weight: 650;
+  margin: 1rem 0 0.5rem;
+}
+.region-tutorial {
+  list-style: none;
+  padding: 0;
+  counter-reset: steps;
+}
+.region-tutorial li,
+.region-research,
+.region-results {
+  padding: 1rem 0;
+  border-bottom: 1px solid #d7ded6;
+}
+.region-tutorial li[data-complete='true'] > strong {
+  color: #32745b;
+}
+.region-tutorial p,
+.region-research p {
+  margin: 0.5rem 0;
+}
+.region-results {
+  background: #e9f2e9;
+  padding: 1rem;
+  border-radius: 0.5rem;
+}
+.region-results dl {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 0.5rem;
+}
+.region-towns {
+  display: grid;
+  gap: 0.75rem;
+}
+.region-towns article {
+  display: grid;
+  gap: 0.35rem;
+  padding: 0.75rem;
+  background: #f1f4ef;
+  border-radius: 0.5rem;
+}
+.region-towns progress {
+  width: 100%;
+  accent-color: #427963;
+}
+.region-weather,
+.region-office .fleet-switch {
+  text-transform: capitalize;
+}
+.region-goal-link {
+  display: block;
+  background: #f2f5ec;
+  color: #315445;
+  border: 1px solid #b7c5b6;
+  border-radius: 0.4rem;
+  padding: 0.4rem 0.6rem;
+  margin: 0.5rem 0;
+  font-size: 0.875rem;
+  pointer-events: auto;
+  text-align: left;
+}
+
+.map-viewport {
+  container-type: inline-size;
+}
+.map-toolbar > .toolbar-row:first-child {
+  flex-wrap: wrap;
+  max-width: 540px;
+}
+.map-toolbar > .toolbar-row:first-child .map-button {
+  font-size: 0.875rem;
+  min-height: 40px;
+}
+.region-goal-link {
+  max-width: 240px;
+}
+@container (max-width: 800px) {
+  .map-toolbar {
+    top: 180px;
+    left: 14px;
+    right: 14px;
+    align-items: flex-start;
+  }
+  .toolbar-row {
+    flex-wrap: wrap;
+    justify-content: flex-start;
+  }
+  .follow-banner {
+    top: auto;
+    bottom: 145px;
+    left: 14px;
+    max-width: calc(100% - 28px);
+  }
+}

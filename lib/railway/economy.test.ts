@@ -1,3 +1,4 @@
+import { tickRegion } from './region';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { Simulation } from './simulation';
@@ -25,6 +26,7 @@ import { Box3 } from 'three';
 function clock(s: Simulation, seconds: number) {
   s.elapsed += seconds;
   tickEconomy(s);
+  tickRegion(s);
 }
 function town(s: Simulation, node: number) {
   return s.economy.towns.find((t) => t.node === node)!;
@@ -291,7 +293,7 @@ void test('version 5 migration preserves physical poses and historic accounts wi
   assert.equal(s.treasury, old.treasury);
   assert.equal(s.delivered, old.delivered);
   assert.ok(s.economy.services.every((service) => service.manifest === null));
-  assert.equal(s.save().version, 7);
+  assert.equal(s.save().version, 8);
   assert.equal(legacy.version, 5);
   reconcile(s);
 });

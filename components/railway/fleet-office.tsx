@@ -20,6 +20,7 @@ import {
   wagonCapacity,
 } from '@/lib/railway/fleet';
 import { WAGONS, type Wagon } from '@/lib/railway/economy';
+import { engineResearch, RESEARCH } from '@/lib/railway/region';
 import { money } from '@/lib/railway/data';
 import type { Simulation } from '@/lib/railway/simulation';
 
@@ -41,6 +42,11 @@ export function FleetOffice({
   const t = sim.trains[selected],
     u = sim.fleet.units[selected],
     spec = ENGINES[u.engine];
+  const requiredResearch = engineResearch(engine);
+  const locked =
+    sim.region.settings.progression &&
+    requiredResearch !== null &&
+    !sim.region.research.includes(requiredResearch);
   const [draft, setDraft] = useState<Wagon[]>([...u.consist]);
   const [depot, setDepot] = useState(sim.endpoints(t)[0]);
   const act = (fn: () => void, message: string) => {
@@ -298,8 +304,15 @@ export function FleetOffice({
             Trade-in credit {money(resale(sim, selected))}. Net cost{' '}
             {money(ENGINES[engine].price - resale(sim, selected))}.
           </p>
+          {locked && (
+            <p className="economy-warning">
+              Research {RESEARCH[requiredResearch!].name} in Region & goals to
+              purchase this engine.
+            </p>
+          )}
           <div className="economy-actions">
             <button
+              disabled={locked}
               onClick={() =>
                 act(
                   () => replaceEngine(sim, selected, engine),

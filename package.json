@@ -15,7 +15,8 @@
     "typecheck": "tsc --noEmit",
     "benchmark:dispatch": "tsx scripts/benchmark-dispatch.ts",
     "benchmark:economy": "tsx scripts/benchmark-economy.ts",
-    "benchmark:fleet": "tsx scripts/benchmark-fleet.ts"
+    "benchmark:fleet": "tsx scripts/benchmark-fleet.ts",
+    "benchmark:region": "tsx scripts/benchmark-region.ts"
   },
   "dependencies": {
     "@base-ui/react": "1.7.0",

@@ -46,6 +46,13 @@ export function registerRailwayTools(
         treasury: sim.treasury,
         delivered: sim.delivered,
         paused: sim.paused,
+        region: {
+          mode: sim.region.mode,
+          delivered: sim.region.delivered,
+          research: sim.region.research,
+          tutorial: sim.region.tutorial,
+          result: sim.region.result,
+        },
         trains: sim.trains.map((t) => ({
           id: t.id,
           name: ENGINES[sim.fleet.units[t.id].engine].name,

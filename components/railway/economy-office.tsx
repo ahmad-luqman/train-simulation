@@ -1,5 +1,6 @@
 'use client';
 /* eslint-disable react/react-compiler -- Samples the authoritative mutable simulation. */
+import { setMoneyMode } from '@/lib/railway/economy';
 import { useState } from 'react';
 import { X } from 'lucide-react';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
@@ -485,7 +486,7 @@ export function EconomyOffice({
               value={e.mode}
               onChange={(event) =>
                 act(() => {
-                  e.mode = event.target.value as typeof e.mode;
+                  setMoneyMode(sim, event.target.value as typeof e.mode);
                 }, 'Money mode changed. All transactions remain in the ledger.')
               }
             >
